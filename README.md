@@ -70,3 +70,5 @@ This command looks slightly different if you're not using `bash` on Linux. The [
 Once you've activated your virtual environment, you can use `pip` to install packages the way you normally would, but the installed
 packages will stay in the virtual environment instead of your global Python installation. Only the virtual environment's Python
 executable will be able to see these packages.
+
+
