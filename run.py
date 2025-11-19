@@ -47,6 +47,8 @@ def main():
                       help='Limit the number of examples to train on.')
     argp.add_argument('--max_eval_samples', type=int, default=None,
                       help='Limit the number of examples to evaluate on.')
+    argp.add_argument('--do_eval_anli', action='store_true',
+                      help='Evaluate the model on the ANLI (Adversarial NLI) dataset.')
 
     training_args, args = argp.parse_args_into_dataclasses()
 
@@ -71,7 +73,7 @@ def main():
         eval_split = 'validation_matched' if dataset_id == ('glue', 'mnli') else 'validation'
         # Load the raw data
         dataset = datasets.load_dataset(*dataset_id)
-    
+
     # NLI models need to have the output label count specified (label 0 is "entailed", 1 is "neutral", and 2 is "contradiction")
     task_kwargs = {'num_labels': 3} if args.task == 'nli' else {}
 
@@ -103,11 +105,12 @@ def main():
     if dataset_id == ('snli',):
         # remove SNLI examples with no label
         dataset = dataset.filter(lambda ex: ex['label'] != -1)
-    
+
     train_dataset = None
     eval_dataset = None
     train_dataset_featurized = None
     eval_dataset_featurized = None
+    anli_datasets_featurized = {}
     if training_args.do_train:
         train_dataset = dataset['train']
         if args.max_train_samples:
@@ -118,6 +121,22 @@ def main():
             num_proc=NUM_PREPROCESSING_WORKERS,
             remove_columns=train_dataset.column_names
         )
+    if training_args.do_eval or args.do_eval_anli:
+        # Handle ANLI evaluation
+        if args.do_eval_anli:
+            # Load ANLI dataset
+            anli_dataset = datasets.load_dataset('anli')
+            # ANLI has three rounds: r1, r2, r3
+            for round_name in ['test_r1', 'test_r2', 'test_r3']:
+                anli_round = anli_dataset[round_name]
+                if args.max_eval_samples:
+                    anli_round = anli_round.select(range(min(args.max_eval_samples, len(anli_round))))
+                anli_datasets_featurized[round_name] = anli_round.map(
+                    prepare_eval_dataset,
+                    batched=True,
+                    num_proc=NUM_PREPROCESSING_WORKERS,
+                    remove_columns=anli_round.column_names
+                )
     if training_args.do_eval:
         eval_dataset = dataset[eval_split]
         if args.max_eval_samples:
@@ -145,7 +164,7 @@ def main():
             predictions=eval_preds.predictions, references=eval_preds.label_ids)
     elif args.task == 'nli':
         compute_metrics = compute_accuracy
-    
+
 
     # This function wraps the compute_metrics function, storing the model's predictions
     # so that they can be dumped along with the computed metrics
@@ -208,6 +227,30 @@ def main():
                     example_with_prediction['predicted_label'] = int(eval_predictions.predictions[i].argmax())
                     f.write(json.dumps(example_with_prediction))
                     f.write('\n')
+
+    # Evaluate on ANLI if requested
+    if args.do_eval_anli:
+        print('\nEvaluating on ANLI dataset...')
+        anli_results = {}
+        for round_name in ['test_r1', 'test_r2', 'test_r3']:
+            if round_name in anli_datasets_featurized:
+                print(f'\nEvaluating on ANLI {round_name}...')
+                # Update trainer's eval dataset
+                trainer.eval_dataset = anli_datasets_featurized[round_name]
+                round_results = trainer.evaluate()
+                anli_results[round_name] = round_results
+                print(f'ANLI {round_name} results:')
+                print(round_results)
+
+        # Save ANLI results
+        os.makedirs(training_args.output_dir, exist_ok=True)
+        with open(os.path.join(training_args.output_dir, 'anli_eval_metrics.json'), encoding='utf-8', mode='w') as f:
+            json.dump(anli_results, f, indent=2)
+
+        # Calculate and print average accuracy across all rounds
+        if anli_results:
+            avg_accuracy = sum(r.get('eval_accuracy', 0) for r in anli_results.values()) / len(anli_results)
+            print(f'\nAverage ANLI accuracy across all rounds: {avg_accuracy:.4f}')
 
 
 if __name__ == "__main__":
