@@ -346,6 +346,18 @@ def main():
                     example_with_prediction['predicted_label'] = int(eval_predictions.predictions[i].argmax())
                     f.write(json.dumps(example_with_prediction))
                     f.write('\n')
+        
+        #put wrong predictions in a separate file
+        with open(os.path.join(training_args.output_dir, 'eval_wrong_predictions.jsonl'), encoding='utf-8', mode='w') as f:
+            if args.task == 'nli':
+                for i, example in enumerate(eval_dataset):
+                    predicted_label = int(eval_predictions.predictions[i].argmax())
+                    if predicted_label != example['label']:
+                        example_with_prediction = dict(example)
+                        example_with_prediction['predicted_scores'] = eval_predictions.predictions[i].tolist()
+                        example_with_prediction['predicted_label'] = predicted_label
+                        f.write(json.dumps(example_with_prediction))
+                        f.write('\n')
 
     # Evaluate on ANLI if requested
     if args.do_eval_anli:
