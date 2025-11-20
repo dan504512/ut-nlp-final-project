@@ -49,6 +49,8 @@ def main():
                       help='Limit the number of examples to evaluate on.')
     argp.add_argument('--do_eval_anli', action='store_true',
                       help='Evaluate the model on the ANLI (Adversarial NLI) dataset.')
+    argp.add_argument('--do_eval_contrast', action='store_true',
+                      help='Evaluate the model on the NLI contrast sets.')
 
     training_args, args = argp.parse_args_into_dataclasses()
 
@@ -111,6 +113,7 @@ def main():
     train_dataset_featurized = None
     eval_dataset_featurized = None
     anli_datasets_featurized = {}
+    contrast_datasets_featurized = {}
     if training_args.do_train:
         train_dataset = dataset['train']
         if args.max_train_samples:
@@ -121,7 +124,7 @@ def main():
             num_proc=NUM_PREPROCESSING_WORKERS,
             remove_columns=train_dataset.column_names
         )
-    if training_args.do_eval or args.do_eval_anli:
+    if training_args.do_eval or args.do_eval_anli or args.do_eval_contrast:
         # Handle ANLI evaluation
         if args.do_eval_anli:
             # Load ANLI dataset
@@ -137,6 +140,41 @@ def main():
                     num_proc=NUM_PREPROCESSING_WORKERS,
                     remove_columns=anli_round.column_names
                 )
+        
+        # Handle contrast set evaluation
+        if args.do_eval_contrast:
+            # Load SNLI contrast set
+            try:
+                print("Loading SNLI contrast set...")
+                # Load SNLI contrast set from AntoineBlanot
+                contrast_dataset = datasets.load_dataset('AntoineBlanot/snli-contrast')
+                
+                contrast_data = contrast_dataset['test']
+                
+                # Convert label_name to numeric label
+                # Based on the instruction field, 'positive' seems to mean non-entailment (contradiction/neutral)
+                # and 'negative' would mean entailment, but let's check the actual mapping
+                def convert_labels(examples):
+                    # For SNLI contrast set: positive = non-entailment (label 2 for contradiction)
+                    # negative = entailment (label 0)
+                    label_map = {'positive': 2, 'negative': 0}
+                    examples['label'] = [label_map.get(l, 1) for l in examples['label_name']]
+                    return examples
+                
+                contrast_data = contrast_data.map(convert_labels, batched=True)
+                
+                if args.max_eval_samples:
+                    contrast_data = contrast_data.select(range(min(args.max_eval_samples, len(contrast_data))))
+                    
+                contrast_datasets_featurized['snli_contrast'] = contrast_data.map(
+                    prepare_eval_dataset,
+                    batched=True,
+                    num_proc=NUM_PREPROCESSING_WORKERS,
+                    remove_columns=contrast_data.column_names
+                )
+                print(f"Successfully loaded SNLI contrast set with {len(contrast_data)} examples")
+            except Exception as e:
+                print(f"Warning: Could not load SNLI contrast set: {e}")
     if training_args.do_eval:
         eval_dataset = dataset[eval_split]
         if args.max_eval_samples:
@@ -251,6 +289,30 @@ def main():
         if anli_results:
             avg_accuracy = sum(r.get('eval_accuracy', 0) for r in anli_results.values()) / len(anli_results)
             print(f'\nAverage ANLI accuracy across all rounds: {avg_accuracy:.4f}')
+    
+    # Evaluate on contrast sets if requested
+    if args.do_eval_contrast:
+        print('\nEvaluating on NLI contrast sets...')
+        contrast_results = {}
+        for contrast_name in contrast_datasets_featurized:
+            print(f'\nEvaluating on {contrast_name}...')
+            # Update trainer's eval dataset
+            trainer.eval_dataset = contrast_datasets_featurized[contrast_name]
+            contrast_result = trainer.evaluate()
+            contrast_results[contrast_name] = contrast_result
+            print(f'{contrast_name} results:')
+            print(contrast_result)
+        
+        # Save contrast set results
+        if contrast_results:
+            os.makedirs(training_args.output_dir, exist_ok=True)
+            with open(os.path.join(training_args.output_dir, 'contrast_eval_metrics.json'), encoding='utf-8', mode='w') as f:
+                json.dump(contrast_results, f, indent=2)
+            
+            # Print average accuracy if available
+            if all('eval_accuracy' in r for r in contrast_results.values()):
+                avg_accuracy = sum(r.get('eval_accuracy', 0) for r in contrast_results.values()) / len(contrast_results)
+                print(f'\nAverage contrast set accuracy: {avg_accuracy:.4f}')
 
 
 if __name__ == "__main__":
