@@ -561,42 +561,54 @@ def main():
                 avg_accuracy = sum(r.get('eval_accuracy', 0) for r in contrast_results.values()) / len(contrast_results)
                 print(f'\nAverage contrast set accuracy: {avg_accuracy:.4f}')
 
-        # save predictions on contrast sets including premise and hypothesis text
+        # save predictions on contrast sets including premise and hypothesis text. refer to original dataset for text
         with open(os.path.join(training_args.output_dir, 'contrast_eval_predictions.jsonl'), encoding='utf-8', mode='w') as f:
             for contrast_name in contrast_datasets_featurized:
                 trainer.eval_dataset = contrast_datasets_featurized[contrast_name]
                 eval_dataset = contrast_datasets_featurized[contrast_name]
                 eval_predictions = trainer.predict(eval_dataset)
+                # To get the original text, we need to refer back to the raw contrast dataset
+                raw_contrast_data = datasets.load_dataset('AntoineBlanot/snli-contrast', split='test')
                 for i, example in enumerate(eval_dataset):
+                    original_example = raw_contrast_data[i]
                     example_with_prediction = dict(example)
+                    example_with_prediction['premise'] = original_example['premise']
+                    example_with_prediction['hypothesis'] = original_example['hypothesis']
                     example_with_prediction['predicted_scores'] = eval_predictions.predictions[i].tolist()
                     example_with_prediction['predicted_label'] = int(eval_predictions.predictions[i].argmax())
                     example_with_prediction['contrast_set'] = contrast_name
                     f.write(json.dumps(example_with_prediction))
                     f.write('\n')
-        # save wrong predictions on contrast sets including premise and hypothesis text
+
+        # save wrong predictions on contrast sets including premise and hypothesis text. refer to original dataset for text
         with open(os.path.join(training_args.output_dir, 'contrast_eval_wrong_predictions.jsonl'), encoding='utf-8', mode='w') as f:
             for contrast_name in contrast_datasets_featurized:
                 trainer.eval_dataset = contrast_datasets_featurized[contrast_name]
                 eval_dataset = contrast_datasets_featurized[contrast_name]
                 eval_predictions = trainer.predict(eval_dataset)
+                # To get the original text, we need to refer back to the raw contrast dataset
+                raw_contrast_data = datasets.load_dataset('AntoineBlanot/snli-contrast', split='test')
                 for i, example in enumerate(eval_dataset):
                     predicted_label = int(eval_predictions.predictions[i].argmax())
                     if predicted_label != example['label']:
+                        original_example = raw_contrast_data[i]
                         example_with_prediction = dict(example)
+                        example_with_prediction['premise'] = original_example['premise']
+                        example_with_prediction['hypothesis'] = original_example['hypothesis']
                         example_with_prediction['predicted_scores'] = eval_predictions.predictions[i].tolist()
                         example_with_prediction['predicted_label'] = predicted_label
                         example_with_prediction['contrast_set'] = contrast_name
                         f.write(json.dumps(example_with_prediction))
                         f.write('\n')
-        #print and save combined confusion matrix for contrast sets
+
+        #print and save combined confusion matrix for contrast sets. include totals, percetages, errors in image
         import numpy as np
         from sklearn.metrics import confusion_matrix
         import matplotlib.pyplot as plt
         import seaborn as sns       
         all_true_labels = []
         all_predicted_labels = []
-        for contrast_name in contrast_datasets_featurized:  
+        for contrast_name in contrast_datasets_featurized:
             eval_dataset = contrast_datasets_featurized[contrast_name]
             eval_predictions = trainer.predict(eval_dataset)
             true_labels = [example['label'] for example in eval_dataset]
@@ -613,7 +625,7 @@ def main():
                     yticklabels=['Entailment', 'Neutral', 'Contradiction'])
         plt.xlabel('Predicted Label')
         plt.ylabel('True Label')
-        plt.title('Combined Contrast Sets Confusion Matrix')
+        plt.title('Contrast Sets Confusion Matrix')
         plt.savefig(os.path.join(training_args.output_dir, 'confusion_matrix_Contrast_Sets.png'))
         plt.close()
 
