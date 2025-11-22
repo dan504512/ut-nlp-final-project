@@ -140,7 +140,7 @@ def main():
                     num_proc=NUM_PREPROCESSING_WORKERS,
                     remove_columns=anli_round.column_names
                 )
-        
+
         # Handle contrast set evaluation
         if args.do_eval_contrast:
             # Load SNLI contrast set
@@ -148,24 +148,34 @@ def main():
                 print("Loading SNLI contrast set...")
                 # Load SNLI contrast set from AntoineBlanot
                 contrast_dataset = datasets.load_dataset('AntoineBlanot/snli-contrast')
-                
+
                 contrast_data = contrast_dataset['test']
-                
-                # Convert label_name to numeric label
-                # Based on the instruction field, 'positive' seems to mean non-entailment (contradiction/neutral)
-                # and 'negative' would mean entailment, but let's check the actual mapping
+
+                # Convert label_name to numeric label based on instruction
                 def convert_labels(examples):
-                    # For SNLI contrast set: positive = non-entailment (label 2 for contradiction)
-                    # negative = entailment (label 0)
-                    label_map = {'positive': 2, 'negative': 0}
-                    examples['label'] = [label_map.get(l, 1) for l in examples['label_name']]
+                    labels = []
+                    for instruction, label_name in zip(examples['instruction'], examples['label_name']):
+                        # Check what "positive" means based on the instruction
+                        if "logically inferred" in instruction:
+                            # Instruction says hypothesis is entailed from premise
+                            if label_name == 'positive':
+                                labels.append(0)  # entailment
+                            else:
+                                labels.append(2)  # non-entailment (treating as contradiction)
+                        else:
+                            # Instruction says hypothesis contradicts/is unrelated
+                            if label_name == 'positive':
+                                labels.append(2)  # non-entailment (contradiction)
+                            else:
+                                labels.append(0)  # entailment
+                    examples['label'] = labels
                     return examples
-                
+
                 contrast_data = contrast_data.map(convert_labels, batched=True)
-                
+
                 if args.max_eval_samples:
                     contrast_data = contrast_data.select(range(min(args.max_eval_samples, len(contrast_data))))
-                    
+
                 contrast_datasets_featurized['snli_contrast'] = contrast_data.map(
                     prepare_eval_dataset,
                     batched=True,
@@ -289,7 +299,7 @@ def main():
         if anli_results:
             avg_accuracy = sum(r.get('eval_accuracy', 0) for r in anli_results.values()) / len(anli_results)
             print(f'\nAverage ANLI accuracy across all rounds: {avg_accuracy:.4f}')
-    
+
     # Evaluate on contrast sets if requested
     if args.do_eval_contrast:
         print('\nEvaluating on NLI contrast sets...')
@@ -302,13 +312,13 @@ def main():
             contrast_results[contrast_name] = contrast_result
             print(f'{contrast_name} results:')
             print(contrast_result)
-        
+
         # Save contrast set results
         if contrast_results:
             os.makedirs(training_args.output_dir, exist_ok=True)
             with open(os.path.join(training_args.output_dir, 'contrast_eval_metrics.json'), encoding='utf-8', mode='w') as f:
                 json.dump(contrast_results, f, indent=2)
-            
+
             # Print average accuracy if available
             if all('eval_accuracy' in r for r in contrast_results.values()):
                 avg_accuracy = sum(r.get('eval_accuracy', 0) for r in contrast_results.values()) / len(contrast_results)
