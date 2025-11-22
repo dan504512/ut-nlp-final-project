@@ -8,8 +8,28 @@ import os
 import json
 import numpy as np
 from collections import Counter
+from datasets import concatenate_datasets, Features, Value
 
 NUM_PREPROCESSING_WORKERS = 2
+
+
+def convert_contrast_labels(examples):
+    """Convert SNLI contrast dataset labels from positive/negative to numeric NLI labels.
+
+    The contrast dataset uses 'positive'/'negative' labels with varying instructions.
+    When instruction mentions "logically inferred", positive means entailment.
+    Otherwise, positive means non-entailment (contradiction).
+    """
+    labels = []
+    for instruction, label_name in zip(examples['instruction'], examples['label_name']):
+        if "logically inferred" in instruction:
+            # Instruction says hypothesis is entailed from premise
+            labels.append(0 if label_name == 'positive' else 2)  # 0=entailment, 2=contradiction
+        else:
+            # Instruction says hypothesis contradicts/is unrelated
+            labels.append(2 if label_name == 'positive' else 0)  # 2=contradiction, 0=entailment
+    examples['label'] = labels
+    return examples
 
 
 def main():
@@ -41,7 +61,9 @@ def main():
         Pass "nli" for natural language inference or "qa" for question answering.
         By default, "nli" will use the SNLI dataset, and "qa" will use the SQuAD dataset.""")
     argp.add_argument('--dataset', type=str, default=None,
-                      help="""This argument overrides the default dataset used for the specified task.""")
+                      help="""This argument overrides the default dataset used for the specified task.
+        Special values: 'snli+contrast' combines SNLI with contrast examples (preserves neutral labels),
+        'snli-contrast' uses only the contrast dataset (no neutral labels).""")
     argp.add_argument('--max_length', type=int, default=128,
                       help="""This argument limits the maximum sequence length used during training/evaluation.
         Shorter sequence lengths need less memory and computation time, but some examples may end up getting truncated.""")
@@ -71,6 +93,70 @@ def main():
         # so if we want to use a jsonl file for evaluation we need to get the "train" split
         # from the loaded dataset
         eval_split = 'train'
+    elif args.dataset == 'snli+contrast':
+        # Combined SNLI and SNLI contrast dataset for training
+        dataset_id = ('snli+contrast',)
+        print("Loading combined SNLI + SNLI contrast dataset...")
+
+        # Load both datasets
+        snli_dataset = datasets.load_dataset('snli')
+        contrast_dataset = datasets.load_dataset('AntoineBlanot/snli-contrast')
+
+        # Process contrast dataset using shared label conversion function
+        contrast_train = contrast_dataset['train'].map(convert_contrast_labels, batched=True) if 'train' in contrast_dataset else None
+        contrast_test = contrast_dataset['test'].map(convert_contrast_labels, batched=True)
+
+        # Filter SNLI to remove examples with no label (-1)
+        snli_train = snli_dataset['train'].filter(lambda ex: ex['label'] != -1)
+        snli_val = snli_dataset['validation'].filter(lambda ex: ex['label'] != -1)
+
+        # Remove extra columns from contrast dataset first
+        if contrast_train:
+            contrast_train = contrast_train.remove_columns(['instruction', 'label_name'])
+        contrast_test = contrast_test.remove_columns(['instruction', 'label_name'])
+
+        # Cast both datasets to have the same feature types
+        common_features = Features({
+            'premise': Value('string'),
+            'hypothesis': Value('string'),
+            'label': Value('int64')
+        })
+
+        snli_train = snli_train.cast(common_features)
+        snli_val = snli_val.cast(common_features)
+        if contrast_train:
+            contrast_train = contrast_train.cast(common_features)
+        contrast_test = contrast_test.cast(common_features)
+
+        # Combine datasets
+        dataset = {}
+        if contrast_train:
+            # Combine SNLI train with contrast train
+            dataset['train'] = concatenate_datasets([snli_train, contrast_train])
+            print(f"Combined training set: {len(snli_train)} SNLI + {len(contrast_train)} contrast = {len(dataset['train'])} examples")
+        else:
+            # Use only SNLI train if no contrast train available
+            dataset['train'] = snli_train
+            print(f"Training set: {len(dataset['train'])} SNLI examples (no contrast train split available)")
+
+        # Use SNLI validation for evaluation
+        dataset['validation'] = snli_val
+        eval_split = 'validation'
+
+    elif args.dataset == 'snli-contrast':
+        # Special handling for SNLI contrast dataset
+        dataset_id = ('AntoineBlanot/snli-contrast',)
+        print("Loading SNLI contrast dataset for training...")
+        raw_dataset = datasets.load_dataset('AntoineBlanot/snli-contrast')
+
+        # Apply label conversion to both train and test splits using shared function
+        dataset = {}
+        if 'train' in raw_dataset:
+            dataset['train'] = raw_dataset['train'].map(convert_contrast_labels, batched=True)
+        dataset['test'] = raw_dataset['test'].map(convert_contrast_labels, batched=True)
+
+        eval_split = 'test'
+        print(f"SNLI contrast dataset loaded: {len(dataset.get('train', []))} train, {len(dataset['test'])} test examples")
     else:
         default_datasets = {'qa': ('squad',), 'nli': ('snli',)}
         dataset_id = tuple(args.dataset.split(':')) if args.dataset is not None else \
@@ -155,27 +241,8 @@ def main():
 
                 contrast_data = contrast_dataset['test']
 
-                # Convert label_name to numeric label based on instruction
-                def convert_labels(examples):
-                    labels = []
-                    for instruction, label_name in zip(examples['instruction'], examples['label_name']):
-                        # Check what "positive" means based on the instruction
-                        if "logically inferred" in instruction:
-                            # Instruction says hypothesis is entailed from premise
-                            if label_name == 'positive':
-                                labels.append(0)  # entailment
-                            else:
-                                labels.append(2)  # non-entailment (treating as contradiction)
-                        else:
-                            # Instruction says hypothesis contradicts/is unrelated
-                            if label_name == 'positive':
-                                labels.append(2)  # non-entailment (contradiction)
-                            else:
-                                labels.append(0)  # entailment
-                    examples['label'] = labels
-                    return examples
-
-                contrast_data = contrast_data.map(convert_labels, batched=True)
+                # Convert label_name to numeric label using shared function
+                contrast_data = contrast_data.map(convert_contrast_labels, batched=True)
 
                 if args.max_eval_samples:
                     contrast_data = contrast_data.select(range(min(args.max_eval_samples, len(contrast_data))))
@@ -378,24 +445,8 @@ def main():
                         # Get the processed contrast data with labels
                         contrast_data = contrast_dataset_original
 
-                        # Apply the same label conversion
-                        def convert_labels(examples):
-                            labels = []
-                            for instruction, label_name in zip(examples['instruction'], examples['label_name']):
-                                if "logically inferred" in instruction:
-                                    if label_name == 'positive':
-                                        labels.append(0)  # entailment
-                                    else:
-                                        labels.append(2)  # non-entailment
-                                else:
-                                    if label_name == 'positive':
-                                        labels.append(2)  # non-entailment
-                                    else:
-                                        labels.append(0)  # entailment
-                            examples['label'] = labels
-                            return examples
-
-                        contrast_data = contrast_data.map(convert_labels, batched=True)
+                        # Apply the same label conversion using shared function
+                        contrast_data = contrast_data.map(convert_contrast_labels, batched=True)
                         if args.max_eval_samples:
                             contrast_data = contrast_data.select(range(min(args.max_eval_samples, len(contrast_data))))
 
