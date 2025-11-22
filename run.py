@@ -243,8 +243,10 @@ def main():
 
                 contrast_data = contrast_dataset['test']
 
+
                 # Convert label_name to numeric label using shared function
                 contrast_data = contrast_data.map(convert_contrast_labels, batched=True)
+
 
                 if args.max_eval_samples:
                     contrast_data = contrast_data.select(range(min(args.max_eval_samples, len(contrast_data))))
@@ -552,24 +554,7 @@ def main():
             with open(os.path.join(training_args.output_dir, 'contrast_eval_metrics.json'), encoding='utf-8', mode='w') as f:
                 json.dump(contrast_results, f, indent=2)
 
-            # Save contrast set predictions
-            for contrast_name, preds in contrast_predictions.items():
-                if preds is not None:
-                    with open(os.path.join(training_args.output_dir, f'{contrast_name}_predictions.jsonl'), encoding='utf-8', mode='w') as f:
-                        # Get the processed contrast data with labels
-                        contrast_data = contrast_dataset_original
 
-                        # Apply the same label conversion using shared function
-                        contrast_data = contrast_data.map(convert_contrast_labels, batched=True)
-                        if args.max_eval_samples:
-                            contrast_data = contrast_data.select(range(min(args.max_eval_samples, len(contrast_data))))
-
-                        for i, example in enumerate(contrast_data):
-                            example_with_prediction = dict(example)
-                            example_with_prediction['predicted_scores'] = preds.predictions[i].tolist()
-                            example_with_prediction['predicted_label'] = int(preds.predictions[i].argmax())
-                            f.write(json.dumps(example_with_prediction))
-                            f.write('\n')
 
             # Print average accuracy if available
             if all('eval_accuracy' in r for r in contrast_results.values()):
