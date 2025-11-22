@@ -6,9 +6,11 @@ from helpers import prepare_dataset_nli, prepare_train_dataset_qa, \
     prepare_validation_dataset_qa, QuestionAnsweringTrainer, compute_accuracy
 import os
 import json
+
 import numpy as np
 from collections import Counter
 from datasets import concatenate_datasets, Features, Value
+
 
 NUM_PREPROCESSING_WORKERS = 2
 
@@ -359,6 +361,31 @@ def main():
                         f.write(json.dumps(example_with_prediction))
                         f.write('\n')
 
+        #print and save confusion matrix for NLI task
+        if args.task == 'nli':
+            import numpy as np
+            from sklearn.metrics import confusion_matrix
+            import matplotlib.pyplot as plt
+            import seaborn as sns
+
+            true_labels = [example['label'] for example in eval_dataset]
+            predicted_labels = [int(pred.argmax()) for pred in eval_predictions.predictions]
+
+            cm = confusion_matrix(true_labels, predicted_labels)
+            print('Confusion Matrix:')
+            print(cm)
+
+            # Save confusion matrix as image
+            plt.figure(figsize=(8, 6))
+            sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
+                        xticklabels=['Entailment', 'Neutral', 'Contradiction'],
+                        yticklabels=['Entailment', 'Neutral', 'Contradiction'])
+            plt.xlabel('Predicted Label')
+            plt.ylabel('True Label')
+            plt.title('Confusion Matrix')
+            plt.savefig(os.path.join(training_args.output_dir, 'confusion_matrix_SNLI.png'))
+            plt.close()
+
     # Evaluate on ANLI if requested
     if args.do_eval_anli:
         print('\nEvaluating on ANLI dataset...')
@@ -386,6 +413,48 @@ def main():
         os.makedirs(training_args.output_dir, exist_ok=True)
         with open(os.path.join(training_args.output_dir, 'anli_eval_metrics.json'), encoding='utf-8', mode='w') as f:
             json.dump(anli_results, f, indent=2)
+        
+        # save predictions on ANLI rounds including premise and hypothesis text
+        with open(os.path.join(training_args.output_dir, 'anli_eval_predictions.jsonl'), encoding='utf-8', mode='w') as f:
+            for round_name in ['test_r1', 'test_r2', 'test_r3']:
+                if round_name in anli_datasets_featurized:
+                    trainer.eval_dataset = anli_datasets_featurized[round_name]
+                    eval_dataset = anli_datasets_featurized[round_name]
+                    eval_predictions = trainer.predict(eval_dataset)
+                    # To get the original text, we need to refer back to the raw ANLI dataset
+                    raw_anli_round = datasets.load_dataset('anli', split=round_name)
+                    for i, example in enumerate(eval_dataset):
+                        original_example = raw_anli_round[i]
+                        example_with_prediction = dict(example)
+                        example_with_prediction['premise'] = original_example['premise']
+                        example_with_prediction['hypothesis'] = original_example['hypothesis']
+                        example_with_prediction['predicted_scores'] = eval_predictions.predictions[i].tolist()
+                        example_with_prediction['predicted_label'] = int(eval_predictions.predictions[i].argmax())
+                        example_with_prediction['round'] = round_name
+                        f.write(json.dumps(example_with_prediction))
+                        f.write('\n')
+
+        # save wrong predictions on ANLI rounds including premise and hypothesis text
+        with open(os.path.join(training_args.output_dir, 'anli_eval_wrong_predictions.jsonl'), encoding='utf-8', mode='w') as f:
+            for round_name in ['test_r1', 'test_r2', 'test_r3']:
+                if round_name in anli_datasets_featurized:
+                    trainer.eval_dataset = anli_datasets_featurized[round_name]
+                    eval_dataset = anli_datasets_featurized[round_name]
+                    eval_predictions = trainer.predict(eval_dataset)
+                    # To get the original text, we need to refer back to the raw ANLI dataset
+                    raw_anli_round = datasets.load_dataset('anli', split=round_name)
+                    for i, example in enumerate(eval_dataset):
+                        predicted_label = int(eval_predictions.predictions[i].argmax())
+                        if predicted_label != example['label']:
+                            original_example = raw_anli_round[i]
+                            example_with_prediction = dict(example)
+                            example_with_prediction['premise'] = original_example['premise']
+                            example_with_prediction['hypothesis'] = original_example['hypothesis']
+                            example_with_prediction['predicted_scores'] = eval_predictions.predictions[i].tolist()
+                            example_with_prediction['predicted_label'] = predicted_label
+                            example_with_prediction['round'] = round_name
+                            f.write(json.dumps(example_with_prediction))
+                            f.write('\n')
 
         # Save ANLI predictions
         for round_name, preds in anli_predictions.items():
@@ -421,6 +490,39 @@ def main():
         if anli_results:
             avg_accuracy = sum(r.get('eval_accuracy', 0) for r in anli_results.values()) / len(anli_results)
             print(f'\nAverage ANLI accuracy across all rounds: {avg_accuracy:.4f}')
+
+
+
+        #print and save combined confusion matrix for ANLI rounds 
+        import numpy as np
+        from sklearn.metrics import confusion_matrix
+        import matplotlib.pyplot as plt
+        import seaborn as sns       
+        all_true_labels = []
+        all_predicted_labels = []
+        for round_name in ['test_r1', 'test_r2', 'test_r3']:
+            if round_name in anli_datasets_featurized:
+                eval_dataset = anli_datasets_featurized[round_name]
+                eval_predictions = trainer.predict(eval_dataset)
+                true_labels = [example['label'] for example in eval_dataset]
+                predicted_labels = [int(pred.argmax()) for pred in eval_predictions.predictions]
+                all_true_labels.extend(true_labels)
+                all_predicted_labels.extend(predicted_labels)   
+        cm = confusion_matrix(all_true_labels, all_predicted_labels)
+        print('Combined ANLI Confusion Matrix:')
+        print(cm)   
+        # Save confusion matrix as image
+        plt.figure(figsize=(8, 6))
+        sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
+                    xticklabels=['Entailment', 'Neutral', 'Contradiction'],
+                    yticklabels=['Entailment', 'Neutral', 'Contradiction'])
+        plt.xlabel('Predicted Label')
+        plt.ylabel('True Label')
+        plt.title('Combined ANLI Confusion Matrix')
+        plt.savefig(os.path.join(training_args.output_dir, 'confusion_matrix_ANLI.png'))
+        plt.close()
+        
+    
 
     # Evaluate on contrast sets if requested
     if args.do_eval_contrast:
@@ -473,6 +575,62 @@ def main():
             if all('eval_accuracy' in r for r in contrast_results.values()):
                 avg_accuracy = sum(r.get('eval_accuracy', 0) for r in contrast_results.values()) / len(contrast_results)
                 print(f'\nAverage contrast set accuracy: {avg_accuracy:.4f}')
+
+        # save predictions on contrast sets including premise and hypothesis text
+        with open(os.path.join(training_args.output_dir, 'contrast_eval_predictions.jsonl'), encoding='utf-8', mode='w') as f:
+            for contrast_name in contrast_datasets_featurized:
+                trainer.eval_dataset = contrast_datasets_featurized[contrast_name]
+                eval_dataset = contrast_datasets_featurized[contrast_name]
+                eval_predictions = trainer.predict(eval_dataset)
+                for i, example in enumerate(eval_dataset):
+                    example_with_prediction = dict(example)
+                    example_with_prediction['predicted_scores'] = eval_predictions.predictions[i].tolist()
+                    example_with_prediction['predicted_label'] = int(eval_predictions.predictions[i].argmax())
+                    example_with_prediction['contrast_set'] = contrast_name
+                    f.write(json.dumps(example_with_prediction))
+                    f.write('\n')
+        # save wrong predictions on contrast sets including premise and hypothesis text
+        with open(os.path.join(training_args.output_dir, 'contrast_eval_wrong_predictions.jsonl'), encoding='utf-8', mode='w') as f:
+            for contrast_name in contrast_datasets_featurized:
+                trainer.eval_dataset = contrast_datasets_featurized[contrast_name]
+                eval_dataset = contrast_datasets_featurized[contrast_name]
+                eval_predictions = trainer.predict(eval_dataset)
+                for i, example in enumerate(eval_dataset):
+                    predicted_label = int(eval_predictions.predictions[i].argmax())
+                    if predicted_label != example['label']:
+                        example_with_prediction = dict(example)
+                        example_with_prediction['predicted_scores'] = eval_predictions.predictions[i].tolist()
+                        example_with_prediction['predicted_label'] = predicted_label
+                        example_with_prediction['contrast_set'] = contrast_name
+                        f.write(json.dumps(example_with_prediction))
+                        f.write('\n')
+        #print and save combined confusion matrix for contrast sets
+        import numpy as np
+        from sklearn.metrics import confusion_matrix
+        import matplotlib.pyplot as plt
+        import seaborn as sns       
+        all_true_labels = []
+        all_predicted_labels = []
+        for contrast_name in contrast_datasets_featurized:  
+            eval_dataset = contrast_datasets_featurized[contrast_name]
+            eval_predictions = trainer.predict(eval_dataset)
+            true_labels = [example['label'] for example in eval_dataset]
+            predicted_labels = [int(pred.argmax()) for pred in eval_predictions.predictions]
+            all_true_labels.extend(true_labels)
+            all_predicted_labels.extend(predicted_labels)   
+        cm = confusion_matrix(all_true_labels, all_predicted_labels)
+        print('Combined Contrast Sets Confusion Matrix:')
+        print(cm)   
+        # Save confusion matrix as image
+        plt.figure(figsize=(8, 6))
+        sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
+                    xticklabels=['Entailment', 'Neutral', 'Contradiction'],
+                    yticklabels=['Entailment', 'Neutral', 'Contradiction'])
+        plt.xlabel('Predicted Label')
+        plt.ylabel('True Label')
+        plt.title('Combined Contrast Sets Confusion Matrix')
+        plt.savefig(os.path.join(training_args.output_dir, 'confusion_matrix_Contrast_Sets.png'))
+        plt.close()
 
 
 def print_confusion_matrix_from_file(predictions_file, task='nli'):

@@ -4,3 +4,7 @@ torch
 tqdm
 transformers
 evaluate
+scikit-learn
+matplotlib
+seaborn
+

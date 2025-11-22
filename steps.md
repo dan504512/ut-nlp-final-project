@@ -6,4 +6,4 @@
 6) apply adversarial fix 
 7) come up with a more sophisticated fix
 8) re-finetune NLI on SNLI dataset
-9) analyze accuracy difference 
+9) analyze accuracy difference
