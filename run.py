@@ -280,13 +280,22 @@ def main():
     if args.do_eval_anli:
         print('\nEvaluating on ANLI dataset...')
         anli_results = {}
+        anli_predictions = {}
+        
+        # Load the original ANLI dataset for saving predictions with examples
+        anli_dataset_original = datasets.load_dataset('anli')
+        
         for round_name in ['test_r1', 'test_r2', 'test_r3']:
             if round_name in anli_datasets_featurized:
                 print(f'\nEvaluating on ANLI {round_name}...')
+                # Reset eval_predictions for this round
+                eval_predictions = None
+                
                 # Update trainer's eval dataset
                 trainer.eval_dataset = anli_datasets_featurized[round_name]
                 round_results = trainer.evaluate()
                 anli_results[round_name] = round_results
+                anli_predictions[round_name] = eval_predictions
                 print(f'ANLI {round_name} results:')
                 print(round_results)
 
@@ -295,6 +304,21 @@ def main():
         with open(os.path.join(training_args.output_dir, 'anli_eval_metrics.json'), encoding='utf-8', mode='w') as f:
             json.dump(anli_results, f, indent=2)
 
+        # Save ANLI predictions
+        for round_name, preds in anli_predictions.items():
+            if preds is not None:
+                with open(os.path.join(training_args.output_dir, f'anli_{round_name}_predictions.jsonl'), encoding='utf-8', mode='w') as f:
+                    original_data = anli_dataset_original[round_name]
+                    if args.max_eval_samples:
+                        original_data = original_data.select(range(min(args.max_eval_samples, len(original_data))))
+                    
+                    for i, example in enumerate(original_data):
+                        example_with_prediction = dict(example)
+                        example_with_prediction['predicted_scores'] = preds.predictions[i].tolist()
+                        example_with_prediction['predicted_label'] = int(preds.predictions[i].argmax())
+                        f.write(json.dumps(example_with_prediction))
+                        f.write('\n')
+        
         # Calculate and print average accuracy across all rounds
         if anli_results:
             avg_accuracy = sum(r.get('eval_accuracy', 0) for r in anli_results.values()) / len(anli_results)
@@ -304,12 +328,21 @@ def main():
     if args.do_eval_contrast:
         print('\nEvaluating on NLI contrast sets...')
         contrast_results = {}
+        contrast_predictions = {}
+        
+        # Keep reference to original contrast data
+        contrast_dataset_original = datasets.load_dataset('AntoineBlanot/snli-contrast')['test']
+        
         for contrast_name in contrast_datasets_featurized:
             print(f'\nEvaluating on {contrast_name}...')
+            # Reset eval_predictions for this contrast set
+            eval_predictions = None
+            
             # Update trainer's eval dataset
             trainer.eval_dataset = contrast_datasets_featurized[contrast_name]
             contrast_result = trainer.evaluate()
             contrast_results[contrast_name] = contrast_result
+            contrast_predictions[contrast_name] = eval_predictions
             print(f'{contrast_name} results:')
             print(contrast_result)
 
@@ -319,6 +352,41 @@ def main():
             with open(os.path.join(training_args.output_dir, 'contrast_eval_metrics.json'), encoding='utf-8', mode='w') as f:
                 json.dump(contrast_results, f, indent=2)
 
+            # Save contrast set predictions
+            for contrast_name, preds in contrast_predictions.items():
+                if preds is not None:
+                    with open(os.path.join(training_args.output_dir, f'{contrast_name}_predictions.jsonl'), encoding='utf-8', mode='w') as f:
+                        # Get the processed contrast data with labels
+                        contrast_data = contrast_dataset_original
+                        
+                        # Apply the same label conversion
+                        def convert_labels(examples):
+                            labels = []
+                            for instruction, label_name in zip(examples['instruction'], examples['label_name']):
+                                if "logically inferred" in instruction:
+                                    if label_name == 'positive':
+                                        labels.append(0)  # entailment
+                                    else:
+                                        labels.append(2)  # non-entailment
+                                else:
+                                    if label_name == 'positive':
+                                        labels.append(2)  # non-entailment
+                                    else:
+                                        labels.append(0)  # entailment
+                            examples['label'] = labels
+                            return examples
+                        
+                        contrast_data = contrast_data.map(convert_labels, batched=True)
+                        if args.max_eval_samples:
+                            contrast_data = contrast_data.select(range(min(args.max_eval_samples, len(contrast_data))))
+                        
+                        for i, example in enumerate(contrast_data):
+                            example_with_prediction = dict(example)
+                            example_with_prediction['predicted_scores'] = preds.predictions[i].tolist()
+                            example_with_prediction['predicted_label'] = int(preds.predictions[i].argmax())
+                            f.write(json.dumps(example_with_prediction))
+                            f.write('\n')
+            
             # Print average accuracy if available
             if all('eval_accuracy' in r for r in contrast_results.values()):
                 avg_accuracy = sum(r.get('eval_accuracy', 0) for r in contrast_results.values()) / len(contrast_results)
