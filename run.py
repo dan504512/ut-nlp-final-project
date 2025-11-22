@@ -311,11 +311,26 @@ def main():
                     original_data = anli_dataset_original[round_name]
                     if args.max_eval_samples:
                         original_data = original_data.select(range(min(args.max_eval_samples, len(original_data))))
-                    
+
                     for i, example in enumerate(original_data):
                         example_with_prediction = dict(example)
                         example_with_prediction['predicted_scores'] = preds.predictions[i].tolist()
                         example_with_prediction['predicted_label'] = int(preds.predictions[i].argmax())
+                        f.write(json.dumps(example_with_prediction))
+                        f.write('\n')
+        # Save combined ANLI predictions
+        with open(os.path.join(training_args.output_dir, f'anli_predictions.jsonl'), encoding='utf-8', mode='w') as f:
+            for round_name, preds in anli_predictions.items():
+                if preds is not None:
+                    original_data = anli_dataset_original[round_name]
+                    if args.max_eval_samples:
+                        original_data = original_data.select(range(min(args.max_eval_samples, len(original_data))))
+
+                    for i, example in enumerate(original_data):
+                        example_with_prediction = dict(example)
+                        example_with_prediction['predicted_scores'] = preds.predictions[i].tolist()
+                        example_with_prediction['predicted_label'] = int(preds.predictions[i].argmax())
+                        example_with_prediction['round'] = round_name
                         f.write(json.dumps(example_with_prediction))
                         f.write('\n')
         
