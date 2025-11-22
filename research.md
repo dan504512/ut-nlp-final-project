@@ -1,6 +1,8 @@
 # Research Paper Summaries for NLP Final Project
 
-This document contains summaries of all papers referenced in the CS388 NLP Final Project, organized chronologically. Each summary includes the paper's key contribution, why it's worth reading for this project, and core concepts.
+This document contains summaries of all papers referenced in the CS388 NLP
+Final Project, organized chronologically. Each summary includes the paper's
+key contribution, why it's worth reading for this project, and core concepts.
 
 ---
 
@@ -11,7 +13,11 @@ This document contains summaries of all papers referenced in the CS388 NLP Final
 **Paper:** bowman2015_snli.pdf
 
 **Key Contribution:**  
-Introduces SNLI (Stanford Natural Language Inference), a corpus of 570k human-written English sentence pairs manually labeled for balanced classification with the labels entailment, contradiction, and neutral. This was the first large-scale corpus for NLI that enabled training data-hungry neural models.
+Introduces SNLI (Stanford Natural Language Inference), a corpus of 570k
+human-written English sentence pairs manually labeled for balanced
+classification with the labels entailment, contradiction, and neutral. This
+was the first large-scale corpus for NLI that enabled training data-hungry
+neural models.
 
 **Why Read:**  
 - Foundational dataset for studying NLI artifacts
@@ -19,9 +25,13 @@ Introduces SNLI (Stanford Natural Language Inference), a corpus of 570k human-wr
 - Baseline experiments reveal patterns that models exploit
 
 **Core Concepts:**  
-- **Natural Language Inference (NLI)**: Task of determining whether a hypothesis is true (entailment), false (contradiction), or undetermined (neutral) given a premise
-- **Crowdsourced annotation**: Using Amazon Mechanical Turk workers to create hypotheses given premises
-- **Annotation artifacts**: Unintended patterns in data creation (e.g., negation words correlate with contradiction)
+- **Natural Language Inference (NLI)**: Task of determining whether a
+  hypothesis is true (entailment), false (contradiction), or undetermined
+  (neutral) given a premise
+- **Crowdsourced annotation**: Using Amazon Mechanical Turk workers to
+  create hypotheses given premises
+- **Annotation artifacts**: Unintended patterns in data creation (e.g.,
+  negation words correlate with contradiction)
 
 ---
 
@@ -32,7 +42,10 @@ Introduces SNLI (Stanford Natural Language Inference), a corpus of 570k human-wr
 **Paper:** rajpurkar2016_squad.pdf
 
 **Key Contribution:**  
-Introduces SQuAD (Stanford Question Answering Dataset), containing 100,000+ questions posed by crowdworkers on Wikipedia articles where the answer is a segment of text from the reading passage. Revolutionized reading comprehension research.
+Introduces SQuAD (Stanford Question Answering Dataset), containing 100,000+
+questions posed by crowdworkers on Wikipedia articles where the answer is a
+segment of text from the reading passage. Revolutionized reading
+comprehension research.
 
 **Why Read:**  
 - Another major dataset prone to artifacts and shortcuts
@@ -41,8 +54,10 @@ Introduces SQuAD (Stanford Question Answering Dataset), containing 100,000+ ques
 
 **Core Concepts:**  
 - **Extractive QA**: Answers must be extracted as spans from the context
-- **Crowdsourced questions**: Workers asked to pose questions about Wikipedia paragraphs
-- **Lexical overlap**: Models exploit word matching between question and context
+- **Crowdsourced questions**: Workers asked to pose questions about
+  Wikipedia paragraphs
+- **Lexical overlap**: Models exploit word matching between question and
+  context
 
 ---
 
@@ -53,7 +68,10 @@ Introduces SQuAD (Stanford Question Answering Dataset), containing 100,000+ ques
 **Paper:** jia2017_adversarial_squad.pdf
 
 **Key Contribution:**  
-Introduces AddSent and AddOneSent methods to generate adversarial examples for reading comprehension by adding distracting sentences to paragraphs. Shows that state-of-the-art models fail catastrophically on these examples despite humans being unaffected.
+Introduces AddSent and AddOneSent methods to generate adversarial examples
+for reading comprehension by adding distracting sentences to paragraphs.
+Shows that state-of-the-art models fail catastrophically on these examples
+despite humans being unaffected.
 
 **Why Read:**  
 - Pioneering work on adversarial evaluation for QA systems
@@ -61,9 +79,12 @@ Introduces AddSent and AddOneSent methods to generate adversarial examples for r
 - Template for creating challenging evaluation sets
 
 **Core Concepts:**  
-- **Adversarial examples**: Inputs designed to fool models while preserving human performance
-- **Distractor sentences**: Sentences that contain question words but don't answer the question
-- **Overstability**: Model's inability to change predictions when semantically significant changes are made
+- **Adversarial examples**: Inputs designed to fool models while preserving
+  human performance
+- **Distractor sentences**: Sentences that contain question words but don't
+  answer the question
+- **Overstability**: Model's inability to change predictions when
+  semantically significant changes are made
 
 ---
 
@@ -74,7 +95,9 @@ Introduces AddSent and AddOneSent methods to generate adversarial examples for r
 **Paper:** williams2018_multinli.pdf
 
 **Key Contribution:**  
-Introduces MultiNLI, a corpus of 433k sentence pairs covering a range of genres of spoken and written text. Extends SNLI with greater linguistic diversity and cross-genre evaluation capabilities.
+Introduces MultiNLI, a corpus of 433k sentence pairs covering a range of
+genres of spoken and written text. Extends SNLI with greater linguistic
+diversity and cross-genre evaluation capabilities.
 
 **Why Read:**  
 - Shows how artifacts persist across different data collection efforts
@@ -83,15 +106,19 @@ Introduces MultiNLI, a corpus of 433k sentence pairs covering a range of genres 
 
 **Core Concepts:**  
 - **Genre diversity**: Telephone speech, fiction, government reports, etc.
-- **Matched/Mismatched evaluation**: Testing on same vs. different genres as training
-- **Cross-genre transfer**: Models struggle when genre shifts despite task being the same
+- **Matched/Mismatched evaluation**: Testing on same vs. different genres as
+  training
+- **Cross-genre transfer**: Models struggle when genre shifts despite task
+  being the same
 
 ### HotpotQA: A Dataset for Diverse, Explainable Multi-hop Question Answering
 **Authors:** Yang et al.  
 **Paper:** yang2018_hotpotqa.pdf
 
 **Key Contribution:**  
-Introduces HotpotQA with 113k Wikipedia-based question-answer pairs requiring reasoning over multiple documents. Features diverse reasoning types and supporting facts annotations for explainability.
+Introduces HotpotQA with 113k Wikipedia-based question-answer pairs
+requiring reasoning over multiple documents. Features diverse reasoning types
+and supporting facts annotations for explainability.
 
 **Why Read:**  
 - Multi-hop reasoning creates new types of exploitable patterns
@@ -99,16 +126,21 @@ Introduces HotpotQA with 113k Wikipedia-based question-answer pairs requiring re
 - Comparison questions show systematic biases
 
 **Core Concepts:**  
-- **Multi-hop reasoning**: Questions requiring information from multiple paragraphs
-- **Supporting facts**: Sentence-level annotations showing evidence for answers
-- **Bridge entities**: Entities connecting reasoning chains that models learn to exploit
+- **Multi-hop reasoning**: Questions requiring information from multiple
+  paragraphs
+- **Supporting facts**: Sentence-level annotations showing evidence for
+  answers
+- **Bridge entities**: Entities connecting reasoning chains that models
+  learn to exploit
 
 ### Hypothesis Only Baselines in Natural Language Inference
 **Authors:** Poliak et al.  
 **Paper:** poliak2018_hypothesis_only.pdf
 
 **Key Contribution:**  
-Demonstrates that models trained only on hypotheses (without premises) can achieve surprisingly high accuracy on NLI tasks, revealing severe annotation artifacts in multiple NLI datasets.
+Demonstrates that models trained only on hypotheses (without premises) can
+achieve surprisingly high accuracy on NLI tasks, revealing severe annotation
+artifacts in multiple NLI datasets.
 
 **Why Read:**  
 - Shocking evidence of dataset artifacts in NLI
@@ -118,14 +150,17 @@ Demonstrates that models trained only on hypotheses (without premises) can achie
 **Core Concepts:**  
 - **Hypothesis-only baseline**: Training models without access to premises
 - **Annotation artifacts**: Statistical patterns that leak label information
-- **Dataset-specific biases**: Different datasets have different exploitable patterns
+- **Dataset-specific biases**: Different datasets have different exploitable
+  patterns
 
 ### Breaking NLI Systems with Sentences that Require Simple Lexical Inferences
 **Authors:** Glockner, Shwartz, Goldberg  
 **Paper:** glockner2018_breaking_nli.pdf
 
 **Key Contribution:**  
-Creates a challenging test set by replacing single words in SNLI with synonyms, antonyms, or hypernyms. State-of-the-art models catastrophically fail on these simple modifications.
+Creates a challenging test set by replacing single words in SNLI with
+synonyms, antonyms, or hypernyms. State-of-the-art models catastrophically
+fail on these simple modifications.
 
 **Why Read:**  
 - Simple method for generating hard examples
@@ -133,16 +168,20 @@ Creates a challenging test set by replacing single words in SNLI with synonyms, 
 - Shows the gap between benchmark performance and linguistic competence
 
 **Core Concepts:**  
-- **Lexical inference**: Understanding word relationships (synonymy, antonymy, hypernymy)
+- **Lexical inference**: Understanding word relationships (synonymy,
+  antonymy, hypernymy)
 - **Minimal pairs**: Examples differing by single word changes
-- **Catastrophic failure**: Models performing near chance on seemingly simple modifications
+- **Catastrophic failure**: Models performing near chance on seemingly
+  simple modifications
 
 ### How Much Reading Does Reading Comprehension Require?
 **Authors:** Kaushik, Lipton  
 **Paper:** kaushik2018_reading_comprehension.pdf
 
 **Key Contribution:**  
-Shows that competitive performance on reading comprehension benchmarks can be achieved using simple models that ignore the passage, revealing that many questions can be answered using prior knowledge or question patterns alone.
+Shows that competitive performance on reading comprehension benchmarks can be
+achieved using simple models that ignore the passage, revealing that many
+questions can be answered using prior knowledge or question patterns alone.
 
 **Why Read:**  
 - Challenges assumptions about what models learn
@@ -152,7 +191,8 @@ Shows that competitive performance on reading comprehension benchmarks can be ac
 **Core Concepts:**  
 - **Passage-independent answering**: Answering without reading the context
 - **Type-matching heuristics**: Matching answer types to question types
-- **Information attribution**: Determining if answers come from passage vs. prior knowledge
+- **Information attribution**: Determining if answers come from passage vs.
+  prior knowledge
 
 ---
 
@@ -163,7 +203,9 @@ Shows that competitive performance on reading comprehension benchmarks can be ac
 **Paper:** chen2019_multihop_reasoning.pdf
 
 **Key Contribution:**  
-Analyzes how dataset design choices in multi-hop QA affect what models learn. Shows that models often use shortcuts rather than performing multi-hop reasoning, and proposes methods to diagnose these issues.
+Analyzes how dataset design choices in multi-hop QA affect what models
+learn. Shows that models often use shortcuts rather than performing multi-hop
+reasoning, and proposes methods to diagnose these issues.
 
 **Why Read:**  
 - Framework for analyzing reasoning requirements
@@ -173,14 +215,17 @@ Analyzes how dataset design choices in multi-hop QA affect what models learn. Sh
 **Core Concepts:**  
 - **Reasoning shortcuts**: Single-hop solutions to multi-hop problems
 - **Decomposition analysis**: Breaking complex questions into sub-questions
-- **Answerability**: Whether partial information suffices for correct answers
+- **Answerability**: Whether partial information suffices for correct
+  answers
 
 ### Don't Take the Easy Way Out: Ensemble Based Methods for Avoiding Known Dataset Biases
 **Authors:** Clark, Yatskar, Zettlemoyer  
 **Paper:** clark2019_dont_take_easy_way.pdf
 
 **Key Contribution:**  
-Proposes ensemble-based debiasing where a biased model learns superficial patterns, then the main model is trained to learn the residual. Shows improvements on challenging evaluation sets.
+Proposes ensemble-based debiasing where a biased model learns superficial
+patterns, then the main model is trained to learn the residual. Shows
+improvements on challenging evaluation sets.
 
 **Why Read:**  
 - Practical debiasing technique you can implement
@@ -188,16 +233,20 @@ Proposes ensemble-based debiasing where a biased model learns superficial patter
 - Strong empirical results on multiple datasets
 
 **Core Concepts:**  
-- **Product of Experts (PoE)**: Combining biased and debiased model predictions
+- **Product of Experts (PoE)**: Combining biased and debiased model
+  predictions
 - **Bias-only model**: Weak model capturing superficial correlations
-- **Residual learning**: Main model learns patterns not captured by bias model
+- **Residual learning**: Main model learns patterns not captured by bias
+  model
 
 ### Unlearn Dataset Bias in Natural Language Inference by Fitting the Residual
 **Authors:** He, Zha, Wang  
 **Paper:** he2019_unlearn_dataset_bias.pdf
 
 **Key Contribution:**  
-Proposes training models to predict the residual errors of a biased model, effectively forcing the model to learn patterns beyond superficial correlations.
+Proposes training models to predict the residual errors of a biased model,
+effectively forcing the model to learn patterns beyond superficial
+correlations.
 
 **Why Read:**  
 - Alternative approach to debiasing
@@ -214,7 +263,9 @@ Proposes training models to predict the residual errors of a biased model, effec
 **Paper:** liu2019_inoculation.pdf
 
 **Key Contribution:**  
-Introduces "inoculation" - fine-tuning on small amounts of challenge data to improve robustness. Shows this simple method can substantially improve performance on adversarial datasets.
+Introduces "inoculation" - fine-tuning on small amounts of challenge data to
+improve robustness. Shows this simple method can substantially improve
+performance on adversarial datasets.
 
 **Why Read:**  
 - Simple, practical improvement technique
@@ -231,7 +282,9 @@ Introduces "inoculation" - fine-tuning on small amounts of challenge data to imp
 **Paper:** mccoy2019_right_wrong_reasons.pdf
 
 **Key Contribution:**  
-Identifies three syntactic heuristics that BERT uses for NLI (lexical overlap, subsequence, constituent). Creates HANS dataset to test these specific heuristics.
+Identifies three syntactic heuristics that BERT uses for NLI (lexical
+overlap, subsequence, constituent). Creates HANS dataset to test these
+specific heuristics.
 
 **Why Read:**  
 - Systematic framework for identifying heuristics
@@ -239,7 +292,8 @@ Identifies three syntactic heuristics that BERT uses for NLI (lexical overlap, s
 - Clear examples of what models actually learn
 
 **Core Concepts:**  
-- **Syntactic heuristics**: Shallow patterns based on word order and structure
+- **Syntactic heuristics**: Shallow patterns based on word order and
+  structure
 - **Lexical overlap heuristic**: Assuming entailment when words overlap
 - **Constituent heuristic**: Assuming entailment for embedded constituents
 - **HANS dataset**: Targeted test for specific heuristics
@@ -249,7 +303,9 @@ Identifies three syntactic heuristics that BERT uses for NLI (lexical overlap, s
 **Paper:** wallace2019_universal_triggers.pdf
 
 **Key Contribution:**  
-Discovers universal adversarial triggers - tokens that, when concatenated to any input, cause targeted model failures. Shows these triggers transfer across examples and sometimes across models.
+Discovers universal adversarial triggers - tokens that, when concatenated to
+any input, cause targeted model failures. Shows these triggers transfer
+across examples and sometimes across models.
 
 **Why Read:**  
 - Reveals fundamental model vulnerabilities
@@ -259,7 +315,8 @@ Discovers universal adversarial triggers - tokens that, when concatenated to any
 **Core Concepts:**  
 - **Universal triggers**: Input-agnostic adversarial tokens
 - **Gradient-based search**: Finding triggers via optimization
-- **Trigger transferability**: Triggers working across different inputs/models
+- **Trigger transferability**: Triggers working across different
+  inputs/models
 
 ---
 
@@ -270,7 +327,9 @@ Discovers universal adversarial triggers - tokens that, when concatenated to any
 **Paper:** clark2020_electra.pdf
 
 **Key Contribution:**  
-Proposes ELECTRA, a pre-training method that trains models to distinguish real tokens from fake ones rather than masked language modeling. More sample-efficient than BERT, especially for smaller models.
+Proposes ELECTRA, a pre-training method that trains models to distinguish
+real tokens from fake ones rather than masked language modeling. More
+sample-efficient than BERT, especially for smaller models.
 
 **Why Read:**  
 - Recommended base model for the project
@@ -287,7 +346,9 @@ Proposes ELECTRA, a pre-training method that trains models to distinguish real t
 **Paper:** gardner2020_contrast_sets.pdf
 
 **Key Contribution:**  
-Introduces contrast sets - expert-crafted perturbations that change gold labels. Shows that models are brittle to these meaningful perturbations despite high original accuracy.
+Introduces contrast sets - expert-crafted perturbations that change gold
+labels. Shows that models are brittle to these meaningful perturbations
+despite high original accuracy.
 
 **Why Read:**  
 - Gold standard for evaluation set construction
@@ -297,7 +358,8 @@ Introduces contrast sets - expert-crafted perturbations that change gold labels.
 **Core Concepts:**  
 - **Contrast sets**: Small perturbations that flip the correct label
 - **Local decision boundaries**: How models behave near specific examples
-- **Expert annotation**: Using human expertise to create meaningful perturbations
+- **Expert annotation**: Using human expertise to create meaningful
+  perturbations
 - **Consistency**: Whether models update predictions appropriately
 
 ### Beyond Accuracy: Behavioral Testing of NLP Models with CheckList
@@ -305,7 +367,9 @@ Introduces contrast sets - expert-crafted perturbations that change gold labels.
 **Paper:** ribeiro2020_checklist.pdf
 
 **Key Contribution:**  
-Introduces CheckList, a task-agnostic methodology for testing NLP models using templates, lexicons, and perturbations. Reveals failures in commercial and research systems.
+Introduces CheckList, a task-agnostic methodology for testing NLP models
+using templates, lexicons, and perturbations. Reveals failures in commercial
+and research systems.
 
 **Why Read:**  
 - Comprehensive testing framework you can apply
@@ -323,7 +387,9 @@ Introduces CheckList, a task-agnostic methodology for testing NLP models using t
 **Paper:** swayamdipta2020_dataset_cartography.pdf
 
 **Key Contribution:**  
-Introduces dataset cartography - using training dynamics to categorize examples as easy, hard, or ambiguous. Shows these categories reveal dataset quality issues and can improve training.
+Introduces dataset cartography - using training dynamics to categorize
+examples as easy, hard, or ambiguous. Shows these categories reveal dataset
+quality issues and can improve training.
 
 **Why Read:**  
 - Main example in the project description
@@ -341,7 +407,9 @@ Introduces dataset cartography - using training dynamics to categorize examples 
 **Paper:** zhou2020_robustifying_nli.pdf
 
 **Key Contribution:**  
-Proposes several debiasing strategies including example reweighting and adversarial training. Shows combining methods improves robustness to lexical biases.
+Proposes several debiasing strategies including example reweighting and
+adversarial training. Shows combining methods improves robustness to lexical
+biases.
 
 **Why Read:**  
 - Comparison of multiple debiasing approaches
@@ -358,7 +426,8 @@ Proposes several debiasing strategies including example reweighting and adversar
 **Paper:** utama2020_debiasing_nlu.pdf
 
 **Key Contribution:**  
-Proposes self-debiasing without knowing biases a priori. Uses shallow models to identify biased examples automatically, then adjusts training accordingly.
+Proposes self-debiasing without knowing biases a priori. Uses shallow models
+to identify biased examples automatically, then adjusts training accordingly.
 
 **Why Read:**  
 - Bias-agnostic debiasing approach
@@ -367,15 +436,19 @@ Proposes self-debiasing without knowing biases a priori. Uses shallow models to 
 
 **Core Concepts:**  
 - **Unknown biases**: Artifacts not identified beforehand
-- **Shallow model ensemble**: Multiple weak learners finding different biases
-- **Confidence-based reweighting**: Down-weighting examples shallow models get right
+- **Shallow model ensemble**: Multiple weak learners finding different
+  biases
+- **Confidence-based reweighting**: Down-weighting examples shallow models
+  get right
 
 ### What Can We Learn from Collective Human Opinions on Natural Language Inference Data?
 **Authors:** Nie, Zhou, Bansal  
 **Paper:** nie2020_collective_opinions.pdf
 
 **Key Contribution:**  
-Collects multiple annotations per example to study human disagreement. Shows that considering annotation distribution rather than single labels reveals dataset issues and improves models.
+Collects multiple annotations per example to study human disagreement. Shows
+that considering annotation distribution rather than single labels reveals
+dataset issues and improves models.
 
 **Why Read:**  
 - Rethinking "ground truth" in NLP
@@ -392,7 +465,9 @@ Collects multiple annotations per example to study human disagreement. Shows tha
 **Paper:** morris2020_textattack.pdf
 
 **Key Contribution:**  
-Introduces TextAttack, a Python framework for adversarial attacks in NLP. Provides standardized implementations of 16 attacks and tools for robustness evaluation.
+Introduces TextAttack, a Python framework for adversarial attacks in NLP.
+Provides standardized implementations of 16 attacks and tools for robustness
+evaluation.
 
 **Why Read:**  
 - Practical toolkit you can use
@@ -409,7 +484,9 @@ Introduces TextAttack, a Python framework for adversarial attacks in NLP. Provid
 **Paper:** bartolo2020_beat_the_ai.pdf
 
 **Key Contribution:**  
-Creates adversarial SQuAD examples through human-model collaboration where annotators try to fool models. Shows models fail on these examples while humans maintain performance.
+Creates adversarial SQuAD examples through human-model collaboration where
+annotators try to fool models. Shows models fail on these examples while
+humans maintain performance.
 
 **Why Read:**  
 - Human-in-the-loop adversarial generation
@@ -430,7 +507,9 @@ Creates adversarial SQuAD examples through human-model collaboration where annot
 **Paper:** gardner2021_competency_problems.pdf
 
 **Key Contribution:**  
-Proposes automatic methods for finding artifacts using n-gram statistics. Shows simple patterns often suffice for high accuracy, questioning what models really learn.
+Proposes automatic methods for finding artifacts using n-gram statistics.
+Shows simple patterns often suffice for high accuracy, questioning what
+models really learn.
 
 **Why Read:**  
 - Automated artifact detection
@@ -439,7 +518,8 @@ Proposes automatic methods for finding artifacts using n-gram statistics. Shows 
 
 **Core Concepts:**  
 - **Competency problems**: Artifacts allowing success without competence
-- **Pointwise mutual information (PMI)**: Measuring feature-label correlation
+- **Pointwise mutual information (PMI)**: Measuring feature-label
+  correlation
 - **N-gram artifacts**: Simple word patterns predicting labels
 - **AFLite algorithm**: Automated artifact finding
 
@@ -448,7 +528,9 @@ Proposes automatic methods for finding artifacts using n-gram statistics. Shows 
 **Paper:** dua2021_instance_bundles.pdf
 
 **Key Contribution:**  
-Proposes training with instance bundles - groups of related questions about the same passage. Shows this improves robustness and reduces reliance on shortcuts.
+Proposes training with instance bundles - groups of related questions about
+the same passage. Shows this improves robustness and reduces reliance on
+shortcuts.
 
 **Why Read:**  
 - Novel training paradigm
@@ -465,7 +547,8 @@ Proposes training with instance bundles - groups of related questions about the 
 **Paper:** sanh2021_learning_from_mistakes.pdf
 
 **Key Contribution:**  
-Proposes PoE (Product of Experts) training where models learn to avoid biases captured by weak baselines without explicitly modeling those biases.
+Proposes PoE (Product of Experts) training where models learn to avoid
+biases captured by weak baselines without explicitly modeling those biases.
 
 **Why Read:**  
 - Elegant debiasing approach
@@ -482,7 +565,9 @@ Proposes PoE (Product of Experts) training where models learn to avoid biases ca
 **Paper:** meissner2021_embracing_ambiguity.pdf
 
 **Key Contribution:**  
-Proposes training NLI models on annotation distributions rather than gold labels, embracing inherent ambiguity in the task. Shows improved calibration and performance.
+Proposes training NLI models on annotation distributions rather than gold
+labels, embracing inherent ambiguity in the task. Shows improved calibration
+and performance.
 
 **Why Read:**  
 - Rethinking NLI task formulation
@@ -499,7 +584,9 @@ Proposes training NLI models on annotation distributions rather than gold labels
 **Paper:** yaghoobzadeh2021_forgettable_examples.pdf
 
 **Key Contribution:**  
-Identifies "forgettable" examples (learned then forgotten during training) as indicators of real patterns vs. memorization. Uses this signal to improve robustness.
+Identifies "forgettable" examples (learned then forgotten during training)
+as indicators of real patterns vs. memorization. Uses this signal to improve
+robustness.
 
 **Why Read:**  
 - Novel perspective on training dynamics
@@ -509,7 +596,8 @@ Identifies "forgettable" examples (learned then forgotten during training) as in
 **Core Concepts:**  
 - **Forgettable examples**: Examples with inconsistent training dynamics
 - **Memorized examples**: Consistently easy examples (likely artifacts)
-- **Example forgetting events**: Transitions from correct to incorrect predictions
+- **Example forgetting events**: Transitions from correct to incorrect
+  predictions
 - **Robust training**: Upweighting forgettable examples
 
 ---
@@ -518,10 +606,14 @@ Identifies "forgettable" examples (learned then forgotten during training) as in
 
 These papers form a comprehensive view of the dataset artifacts problem in NLP:
 
-1. **Problem Identification** (2015-2018): Early work identifying artifacts in major datasets
-2. **Diagnostic Methods** (2018-2019): Systematic approaches to finding and measuring artifacts
-3. **Debiasing Techniques** (2019-2021): Various methods to mitigate artifacts
-4. **Evaluation Frameworks** (2020-2021): Comprehensive testing and analysis tools
+1. **Problem Identification** (2015-2018): Early work identifying artifacts
+   in major datasets
+2. **Diagnostic Methods** (2018-2019): Systematic approaches to finding and
+   measuring artifacts
+3. **Debiasing Techniques** (2019-2021): Various methods to mitigate
+   artifacts
+4. **Evaluation Frameworks** (2020-2021): Comprehensive testing and analysis
+   tools
 
 Key themes across papers:
 - Models exploit superficial patterns rather than learning intended tasks
@@ -530,4 +622,5 @@ Key themes across papers:
 - Evaluation beyond accuracy is crucial
 - Human judgment and ambiguity matter
 
-These papers provide the theoretical foundation and practical tools needed for the final project's goal of analyzing and mitigating dataset artifacts.
+These papers provide the theoretical foundation and practical tools needed
+for the final project's goal of analyzing and mitigating dataset artifacts.
