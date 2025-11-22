@@ -6,6 +6,8 @@ from helpers import prepare_dataset_nli, prepare_train_dataset_qa, \
     prepare_validation_dataset_qa, QuestionAnsweringTrainer, compute_accuracy
 import os
 import json
+import numpy as np
+from collections import Counter
 
 NUM_PREPROCESSING_WORKERS = 2
 
@@ -51,6 +53,8 @@ def main():
                       help='Evaluate the model on the ANLI (Adversarial NLI) dataset.')
     argp.add_argument('--do_eval_contrast', action='store_true',
                       help='Evaluate the model on the NLI contrast sets.')
+    argp.add_argument('--print_confusion_matrix', type=str, default=None,
+                      help='Print confusion matrix for the specified predictions file (JSONL format).')
 
     training_args, args = argp.parse_args_into_dataclasses()
 
@@ -281,16 +285,16 @@ def main():
         print('\nEvaluating on ANLI dataset...')
         anli_results = {}
         anli_predictions = {}
-        
+
         # Load the original ANLI dataset for saving predictions with examples
         anli_dataset_original = datasets.load_dataset('anli')
-        
+
         for round_name in ['test_r1', 'test_r2', 'test_r3']:
             if round_name in anli_datasets_featurized:
                 print(f'\nEvaluating on ANLI {round_name}...')
                 # Reset eval_predictions for this round
                 eval_predictions = None
-                
+
                 # Update trainer's eval dataset
                 trainer.eval_dataset = anli_datasets_featurized[round_name]
                 round_results = trainer.evaluate()
@@ -333,7 +337,7 @@ def main():
                         example_with_prediction['round'] = round_name
                         f.write(json.dumps(example_with_prediction))
                         f.write('\n')
-        
+
         # Calculate and print average accuracy across all rounds
         if anli_results:
             avg_accuracy = sum(r.get('eval_accuracy', 0) for r in anli_results.values()) / len(anli_results)
@@ -344,15 +348,15 @@ def main():
         print('\nEvaluating on NLI contrast sets...')
         contrast_results = {}
         contrast_predictions = {}
-        
+
         # Keep reference to original contrast data
         contrast_dataset_original = datasets.load_dataset('AntoineBlanot/snli-contrast')['test']
-        
+
         for contrast_name in contrast_datasets_featurized:
             print(f'\nEvaluating on {contrast_name}...')
             # Reset eval_predictions for this contrast set
             eval_predictions = None
-            
+
             # Update trainer's eval dataset
             trainer.eval_dataset = contrast_datasets_featurized[contrast_name]
             contrast_result = trainer.evaluate()
@@ -373,7 +377,7 @@ def main():
                     with open(os.path.join(training_args.output_dir, f'{contrast_name}_predictions.jsonl'), encoding='utf-8', mode='w') as f:
                         # Get the processed contrast data with labels
                         contrast_data = contrast_dataset_original
-                        
+
                         # Apply the same label conversion
                         def convert_labels(examples):
                             labels = []
@@ -390,23 +394,149 @@ def main():
                                         labels.append(0)  # entailment
                             examples['label'] = labels
                             return examples
-                        
+
                         contrast_data = contrast_data.map(convert_labels, batched=True)
                         if args.max_eval_samples:
                             contrast_data = contrast_data.select(range(min(args.max_eval_samples, len(contrast_data))))
-                        
+
                         for i, example in enumerate(contrast_data):
                             example_with_prediction = dict(example)
                             example_with_prediction['predicted_scores'] = preds.predictions[i].tolist()
                             example_with_prediction['predicted_label'] = int(preds.predictions[i].argmax())
                             f.write(json.dumps(example_with_prediction))
                             f.write('\n')
-            
+
             # Print average accuracy if available
             if all('eval_accuracy' in r for r in contrast_results.values()):
                 avg_accuracy = sum(r.get('eval_accuracy', 0) for r in contrast_results.values()) / len(contrast_results)
                 print(f'\nAverage contrast set accuracy: {avg_accuracy:.4f}')
 
 
+def print_confusion_matrix_from_file(predictions_file, task='nli'):
+    """Print an ASCII confusion matrix from a predictions JSONL file."""
+
+    # Read predictions
+    true_labels = []
+    predicted_labels = []
+
+    with open(predictions_file, 'r', encoding='utf-8') as f:
+        for line in f:
+            example = json.loads(line)
+            true_labels.append(example['label'])
+            predicted_labels.append(example['predicted_label'])
+
+    if task == 'nli':
+        label_names = ['Entailment', 'Neutral', 'Contradiction']
+        label_abbrevs = ['E', 'N', 'C']
+    else:
+        # For other tasks, use numeric labels
+        unique_labels = sorted(set(true_labels + predicted_labels))
+        label_names = [f'Class {i}' for i in unique_labels]
+        label_abbrevs = [str(i) for i in unique_labels]
+
+    n_classes = len(label_names)
+
+    # Calculate confusion matrix
+    matrix = np.zeros((n_classes, n_classes), dtype=int)
+    for true, pred in zip(true_labels, predicted_labels):
+        matrix[true][pred] += 1
+
+    # Calculate metrics
+    total = len(true_labels)
+    correct = sum(t == p for t, p in zip(true_labels, predicted_labels))
+    accuracy = correct / total if total > 0 else 0
+
+    # Print the matrix
+    print("\n" + "="*60)
+    print(f"CONFUSION MATRIX - {predictions_file}")
+    print("="*60)
+    print(f"Total examples: {total}")
+    print(f"Accuracy: {accuracy:.4f} ({correct}/{total})")
+    print()
+
+    # Create ASCII table
+    # Header
+    col_width = 10
+    label_col_width = 20
+
+    # Print header
+    print()
+    print(" " * (label_col_width + 5) + "PREDICTED")
+    print(" " * (label_col_width + 1) + "|" + "".join(f"{abbrev:^{col_width}}" for abbrev in label_abbrevs) + "|")
+    print(" " * (label_col_width + 1) + "+" + "-" * (col_width * n_classes) + "+")
+
+    # Rows
+    for i, (name, abbrev) in enumerate(zip(label_names, label_abbrevs)):
+        row_label = f"{abbrev}: {name[:10]}"
+
+        # Add TRUE label only on middle row for visual clarity
+        if i == 1:
+            # Middle row gets TRUE label
+            full_label = f"TRUE {row_label}"
+        else:
+            # Other rows get spaces
+            full_label = f"     {row_label}"
+
+        print(f"{full_label:<{label_col_width+1}}|", end="")
+
+        for j in range(n_classes):
+            count = matrix[i][j]
+            # Highlight diagonal (correct predictions)
+            if i == j:
+                # Use same width as non-diagonal entries but with asterisks
+                print(f"  **{count:4}**", end="")
+            else:
+                print(f"    {count:4}  ", end="")
+
+        # Print row metrics
+        row_total = matrix[i].sum()
+        row_recall = matrix[i][i] / row_total if row_total > 0 else 0
+        print(f"|  {row_total:4} ({row_recall:5.1%})")
+
+    print(" " * (label_col_width + 1) + "+" + "-" * (col_width * n_classes) + "+")
+
+    # Column totals
+    print(" " * (label_col_width + 1) + "|", end="")
+    for j in range(n_classes):
+        col_total = matrix[:, j].sum()
+        print(f"  {col_total:5}  ", end="")
+    print("|")
+
+    # Precision row
+    print(" " * (label_col_width - 4) + "Prec:|", end="")
+    for j in range(n_classes):
+        col_total = matrix[:, j].sum()
+        precision = matrix[j][j] / col_total if col_total > 0 else 0
+        print(f" {precision:6.1%} ", end="")
+    print("|")
+
+    # Per-class F1 scores
+    print("\nPer-class F1 scores:")
+    for i, name in enumerate(label_names):
+        row_total = matrix[i].sum()
+        col_total = matrix[:, i].sum()
+        recall = matrix[i][i] / row_total if row_total > 0 else 0
+        precision = matrix[i][i] / col_total if col_total > 0 else 0
+        f1 = 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0
+        print(f"  {name:15}: {f1:.4f}")
+
+    print("="*60 + "\n")
+
+
 if __name__ == "__main__":
+    # Check if we're just printing a confusion matrix
+    import sys
+    if len(sys.argv) >= 3 and '--print_confusion_matrix' in sys.argv:
+        idx = sys.argv.index('--print_confusion_matrix')
+        if idx + 1 < len(sys.argv):
+            predictions_file = sys.argv[idx + 1]
+            if os.path.exists(predictions_file):
+                # Determine task type from filename or default to nli
+                task = 'nli'  # Default to NLI for now
+                print_confusion_matrix_from_file(predictions_file, task)
+                sys.exit(0)
+            else:
+                print(f"Error: Predictions file '{predictions_file}' not found.")
+                sys.exit(1)
+
     main()
