@@ -3,8 +3,11 @@ import collections
 from collections import defaultdict, OrderedDict
 from transformers import Trainer, EvalPrediction
 from transformers.trainer_utils import PredictionOutput
-from typing import Tuple
+from typing import Tuple, Optional, Dict, Union, List, Any
 from tqdm.auto import tqdm
+import torch
+import torch.nn.functional as F
+from torch.utils.data import Dataset
 
 QA_MAX_ANSWER_LENGTH = 30
 
@@ -312,3 +315,335 @@ class QuestionAnsweringTrainer(Trainer):
         self.control = self.callback_handler.on_evaluate(self.args, self.state,
                                                          self.control, metrics)
         return metrics
+
+
+class ContrastBundle:
+    """Groups an original example with its contrast examples."""
+    def __init__(self, original, contrasts):
+        self.original = original
+        self.contrasts = contrasts
+
+
+class ContrastiveNLIDataset(Dataset):
+    """Dataset that groups original examples with their contrast sets."""
+
+    def __init__(self, snli_dataset, tokenizer=None, max_length=128, min_hypotheses=2):
+        """
+        Args:
+            snli_dataset: SNLI dataset (already filtered for label != -1)
+            tokenizer: Tokenizer for encoding text
+            max_length: Maximum sequence length
+            min_hypotheses: Minimum number of hypotheses required per premise (default 2)
+        """
+        self.tokenizer = tokenizer
+        self.max_length = max_length
+        self.bundles = []
+        
+        # Group examples by premise
+        from collections import defaultdict
+        premise_groups = defaultdict(list)
+        
+        # Limit for memory efficiency
+        max_examples = min(len(snli_dataset), 50000) if hasattr(snli_dataset, '__len__') else 50000
+        
+        for idx in range(max_examples):
+            ex = snli_dataset[idx]
+            premise_groups[ex['premise']].append({
+                'hypothesis': ex['hypothesis'],
+                'label': ex['label']
+            })
+        
+        # Create bundles from groups with enough hypotheses
+        for premise, hypotheses in premise_groups.items():
+            if len(hypotheses) >= min_hypotheses:
+                # Use first hypothesis as "original", rest as "contrasts"
+                bundle = ContrastBundle(
+                    original={'premise': premise, 'hypothesis': hypotheses[0]['hypothesis'], 'label': hypotheses[0]['label']},
+                    contrasts=[{'premise': premise, 'hypothesis': h['hypothesis'], 'label': h['label']} 
+                               for h in hypotheses[1:]]
+                )
+                self.bundles.append(bundle)
+        
+        if self.bundles:
+            print(f"Created {len(self.bundles)} bundles from {max_examples} examples")
+            avg_hyp = sum(len(b.contrasts) + 1 for b in self.bundles) / len(self.bundles)
+            print(f"Average hypotheses per bundle: {avg_hyp:.1f}")
+
+    def __len__(self):
+        return len(self.bundles)
+
+    def __getitem__(self, idx):
+        bundle = self.bundles[idx]
+
+        # Debug
+        # print(f"Getting item {idx}, bundle.original type: {type(bundle.original)}")
+
+        # Tokenize original
+        original_inputs = self.tokenizer(
+            bundle.original['premise'],
+            bundle.original['hypothesis'],
+            truncation=True,
+            max_length=self.max_length,
+            padding='max_length',
+            return_tensors='pt'
+        )
+
+        # Tokenize contrasts
+        contrast_inputs = []
+        contrast_labels = []
+        for contrast in bundle.contrasts:
+            contrast_input = self.tokenizer(
+                contrast['premise'],
+                contrast['hypothesis'],
+                truncation=True,
+                max_length=self.max_length,
+                padding='max_length',
+                return_tensors='pt'
+            )
+            contrast_inputs.append(contrast_input)
+            contrast_labels.append(contrast['label'])
+
+        return {
+            'original_input_ids': original_inputs['input_ids'].squeeze(),
+            'original_attention_mask': original_inputs['attention_mask'].squeeze(),
+            'original_label': bundle.original['label'],
+            'contrast_input_ids': torch.stack([c['input_ids'].squeeze() for c in contrast_inputs]) if contrast_inputs else torch.tensor([]),
+            'contrast_attention_mask': torch.stack([c['attention_mask'].squeeze() for c in contrast_inputs]) if contrast_inputs else torch.tensor([]),
+            'contrast_labels': torch.tensor(contrast_labels) if contrast_labels else torch.tensor([]),
+            'has_contrasts': len(bundle.contrasts) > 0
+        }
+
+
+class NLIContrastTrainer(Trainer):
+    """
+    Trainer that implements proper contrastive learning for NLI.
+    Instead of treating contrast examples as independent training samples,
+    it processes them together with their originals to create comparative learning signals.
+    """
+
+    def __init__(self, *args, contrast_weight=0.5, temperature=0.1, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.contrast_weight = contrast_weight  # Weight for contrastive loss
+        self.temperature = temperature  # Temperature for contrastive softmax
+        # Disable remove_unused_columns since we're using custom column names
+        self.args.remove_unused_columns = False
+
+    def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
+        """
+        Compute combined cross-entropy and contrastive loss.
+        """
+        # Check if we have contrast examples
+        has_contrasts = inputs.get('has_contrasts', False)
+        if isinstance(has_contrasts, torch.Tensor):
+            has_contrasts = has_contrasts.any().item()
+
+        if not has_contrasts or inputs['contrast_input_ids'].numel() == 0:
+            # No contrasts - fall back to standard loss
+            labels = inputs.pop('original_label', inputs.get('labels'))
+            # Remove contrast-related keys
+            for key in ['contrast_input_ids', 'contrast_attention_mask', 'contrast_labels', 'has_contrasts']:
+                inputs.pop(key, None)
+
+            # Rename original keys to standard names
+            if 'original_input_ids' in inputs:
+                inputs['input_ids'] = inputs.pop('original_input_ids')
+            if 'original_attention_mask' in inputs:
+                inputs['attention_mask'] = inputs.pop('original_attention_mask')
+            inputs['labels'] = labels
+
+            outputs = model(**inputs)
+            loss = outputs.loss if outputs.loss is not None else outputs['loss']
+            return (loss, outputs) if return_outputs else loss
+
+        # Process original examples
+        original_outputs = model(
+            input_ids=inputs['original_input_ids'],
+            attention_mask=inputs['original_attention_mask']
+        )
+        original_logits = original_outputs.logits
+
+        # Standard cross-entropy loss for originals
+        ce_loss = F.cross_entropy(
+            original_logits,
+            inputs['original_label']
+        )
+
+        # Process contrast examples
+        batch_size = inputs['original_input_ids'].size(0)
+        contrast_losses = []
+
+        for i in range(batch_size):
+            if inputs['contrast_input_ids'][i].numel() > 0:
+                # Get contrasts for this example
+                contrast_ids = inputs['contrast_input_ids'][i]
+                contrast_mask = inputs['contrast_attention_mask'][i]
+                contrast_labels = inputs['contrast_labels'][i]
+
+                # Skip if no contrasts
+                if len(contrast_ids.shape) == 1:
+                    contrast_ids = contrast_ids.unsqueeze(0)
+                    contrast_mask = contrast_mask.unsqueeze(0)
+                    contrast_labels = contrast_labels.unsqueeze(0)
+
+                # Forward pass for contrasts
+                contrast_outputs = model(
+                    input_ids=contrast_ids,
+                    attention_mask=contrast_mask
+                )
+                contrast_logits = contrast_outputs.logits
+
+                # Compute contrastive loss
+                # The original should score higher for the correct class than contrasts
+                original_score = original_logits[i].unsqueeze(0)
+
+                # Concatenate original and contrast logits
+                all_logits = torch.cat([original_score, contrast_logits], dim=0)
+
+                # Apply temperature scaling and softmax across all examples
+                all_scores = F.log_softmax(all_logits / self.temperature, dim=0)
+
+                # Contrastive loss: original should have highest score
+                # We want the original (index 0) to have the highest probability
+                contrastive_loss = -all_scores[0, inputs['original_label'][i]]
+
+                contrast_losses.append(contrastive_loss)
+
+        # Combine losses
+        if contrast_losses:
+            avg_contrast_loss = torch.stack(contrast_losses).mean()
+            total_loss = (1 - self.contrast_weight) * ce_loss + self.contrast_weight * avg_contrast_loss
+        else:
+            total_loss = ce_loss
+
+        return (total_loss, original_outputs) if return_outputs else total_loss
+
+    def _prepare_inputs(self, inputs: Dict[str, Union[torch.Tensor, Any]]) -> Dict[str, Union[torch.Tensor, Any]]:
+        """
+        Prepare inputs before sending them to the model.
+        """
+        # Move inputs to the correct device
+        inputs = self._prepare_input(inputs)
+
+        # Handle both standard and contrast inputs
+        for key in ['original_input_ids', 'original_attention_mask', 'original_label',
+                    'contrast_input_ids', 'contrast_attention_mask', 'contrast_labels']:
+            if key in inputs and isinstance(inputs[key], torch.Tensor):
+                inputs[key] = inputs[key].to(self.args.device)
+
+        return inputs
+
+
+class ContrastiveDataCollator:
+    """Custom data collator for contrastive learning that handles bundled examples."""
+
+    def __init__(self, tokenizer):
+        self.tokenizer = tokenizer
+
+    def __call__(self, features):
+        # Debug: check what we're receiving
+        if not features:
+            return {}
+
+        # Debug print (commented out for production)
+        # if features:
+        #     print(f"Collator received {len(features)} features")
+        #     print(f"First feature type: {type(features[0])}")
+        #     print(f"First feature str: {str(features[0])[:200]}")  # Print first 200 chars
+        #     if isinstance(features[0], dict):
+        #         print(f"First feature keys: {list(features[0].keys())}")
+        #     elif hasattr(features[0], '__dict__'):
+        #         print(f"First feature attrs: {vars(features[0])}")
+        #     else:
+        #         print(f"First feature type: {type(features[0])}, value: {features[0]}")
+
+        # Check if this is standard format (not contrastive)
+        if isinstance(features[0], dict) and 'input_ids' in features[0]:
+            # Standard format - just pass through
+            from transformers import default_data_collator
+            return default_data_collator(features)
+
+        # Separate features into components
+        batch = {
+            'original_input_ids': [],
+            'original_attention_mask': [],
+            'original_label': [],
+            'contrast_input_ids': [],
+            'contrast_attention_mask': [],
+            'contrast_labels': [],
+            'has_contrasts': []
+        }
+
+        max_num_contrasts = 0
+        for feature in features:
+            batch['original_input_ids'].append(feature['original_input_ids'])
+            batch['original_attention_mask'].append(feature['original_attention_mask'])
+            batch['original_label'].append(feature['original_label'])
+            batch['has_contrasts'].append(feature['has_contrasts'])
+
+            # Track max number of contrasts for padding
+            if feature['has_contrasts'] and feature['contrast_input_ids'].numel() > 0:
+                num_contrasts = len(feature['contrast_input_ids']) if len(feature['contrast_input_ids'].shape) > 1 else 1
+                max_num_contrasts = max(max_num_contrasts, num_contrasts)
+
+        # Stack original tensors
+        batch['original_input_ids'] = torch.stack(batch['original_input_ids'])
+        batch['original_attention_mask'] = torch.stack(batch['original_attention_mask'])
+        batch['original_label'] = torch.tensor(batch['original_label'])
+        batch['has_contrasts'] = torch.tensor(batch['has_contrasts'])
+
+        # Handle contrast examples with padding
+        if max_num_contrasts > 0:
+            padded_contrast_ids = []
+            padded_contrast_masks = []
+            padded_contrast_labels = []
+
+            for feature in features:
+                if feature['has_contrasts'] and feature['contrast_input_ids'].numel() > 0:
+                    contrast_ids = feature['contrast_input_ids']
+                    contrast_mask = feature['contrast_attention_mask']
+                    contrast_labels = feature['contrast_labels']
+
+                    # Pad to max_num_contrasts if needed
+                    if len(contrast_ids.shape) == 1:
+                        contrast_ids = contrast_ids.unsqueeze(0)
+                        contrast_mask = contrast_mask.unsqueeze(0)
+                        contrast_labels = contrast_labels.unsqueeze(0)
+
+                    current_num = contrast_ids.size(0)
+                    if current_num < max_num_contrasts:
+                        # Pad with zeros
+                        pad_size = max_num_contrasts - current_num
+                        seq_len = contrast_ids.size(1)
+                        contrast_ids = torch.cat([
+                            contrast_ids,
+                            torch.zeros(pad_size, seq_len, dtype=contrast_ids.dtype)
+                        ])
+                        contrast_mask = torch.cat([
+                            contrast_mask,
+                            torch.zeros(pad_size, seq_len, dtype=contrast_mask.dtype)
+                        ])
+                        contrast_labels = torch.cat([
+                            contrast_labels,
+                            torch.zeros(pad_size, dtype=contrast_labels.dtype)
+                        ])
+
+                    padded_contrast_ids.append(contrast_ids)
+                    padded_contrast_masks.append(contrast_mask)
+                    padded_contrast_labels.append(contrast_labels)
+                else:
+                    # No contrasts - add placeholder
+                    seq_len = batch['original_input_ids'].size(-1)
+                    padded_contrast_ids.append(torch.zeros(max_num_contrasts, seq_len, dtype=torch.long))
+                    padded_contrast_masks.append(torch.zeros(max_num_contrasts, seq_len, dtype=torch.long))
+                    padded_contrast_labels.append(torch.zeros(max_num_contrasts, dtype=torch.long))
+
+            batch['contrast_input_ids'] = torch.stack(padded_contrast_ids)
+            batch['contrast_attention_mask'] = torch.stack(padded_contrast_masks)
+            batch['contrast_labels'] = torch.stack(padded_contrast_labels)
+        else:
+            # No contrasts in batch
+            batch['contrast_input_ids'] = torch.tensor([])
+            batch['contrast_attention_mask'] = torch.tensor([])
+            batch['contrast_labels'] = torch.tensor([])
+
+        return batch

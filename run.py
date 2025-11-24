@@ -3,33 +3,16 @@ from transformers import AutoTokenizer, AutoModelForSequenceClassification, \
     AutoModelForQuestionAnswering, Trainer, TrainingArguments, HfArgumentParser
 import evaluate
 from helpers import prepare_dataset_nli, prepare_train_dataset_qa, \
-    prepare_validation_dataset_qa, QuestionAnsweringTrainer, compute_accuracy
+    prepare_validation_dataset_qa, QuestionAnsweringTrainer, compute_accuracy, \
+    NLIContrastTrainer, ContrastiveNLIDataset, ContrastiveDataCollator
 import os
 import json
 import numpy as np
 from collections import Counter
-from datasets import concatenate_datasets, Features, Value
 
 NUM_PREPROCESSING_WORKERS = 2
 
 
-def convert_contrast_labels(examples):
-    """Convert SNLI contrast dataset labels from positive/negative to numeric NLI labels.
-
-    The contrast dataset uses 'positive'/'negative' labels with varying instructions.
-    When instruction mentions "logically inferred", positive means entailment.
-    Otherwise, positive means non-entailment (contradiction).
-    """
-    labels = []
-    for instruction, label_name in zip(examples['instruction'], examples['label_name']):
-        if "logically inferred" in instruction:
-            # Instruction says hypothesis is entailed from premise
-            labels.append(0 if label_name == 'positive' else 2)  # 0=entailment, 2=contradiction
-        else:
-            # Instruction says hypothesis contradicts/is unrelated
-            labels.append(2 if label_name == 'positive' else 0)  # 2=contradiction, 0=entailment
-    examples['label'] = labels
-    return examples
 
 
 def main():
@@ -61,9 +44,7 @@ def main():
         Pass "nli" for natural language inference or "qa" for question answering.
         By default, "nli" will use the SNLI dataset, and "qa" will use the SQuAD dataset.""")
     argp.add_argument('--dataset', type=str, default=None,
-                      help="""This argument overrides the default dataset used for the specified task.
-        Special values: 'snli+contrast' combines SNLI with contrast examples (preserves neutral labels),
-        'snli-contrast' uses only the contrast dataset (no neutral labels).""")
+                      help="""This argument overrides the default dataset used for the specified task.""")
     argp.add_argument('--max_length', type=int, default=128,
                       help="""This argument limits the maximum sequence length used during training/evaluation.
         Shorter sequence lengths need less memory and computation time, but some examples may end up getting truncated.""")
@@ -73,10 +54,14 @@ def main():
                       help='Limit the number of examples to evaluate on.')
     argp.add_argument('--do_eval_anli', action='store_true',
                       help='Evaluate the model on the ANLI (Adversarial NLI) dataset.')
-    argp.add_argument('--do_eval_contrast', action='store_true',
-                      help='Evaluate the model on the NLI contrast sets.')
     argp.add_argument('--print_confusion_matrix', type=str, default=None,
                       help='Print confusion matrix for the specified predictions file (JSONL format).')
+    argp.add_argument('--use_contrastive_learning', action='store_true',
+                      help='Use contrastive learning with NLIContrastTrainer (processes originals and contrasts together).')
+    argp.add_argument('--contrast_weight', type=float, default=0.5,
+                      help='Weight for contrastive loss (0=only CE, 1=only contrastive). Default 0.5')
+    argp.add_argument('--contrast_temperature', type=float, default=0.1,
+                      help='Temperature for contrastive softmax. Lower = sharper. Default 0.1')
 
     training_args, args = argp.parse_args_into_dataclasses()
 
@@ -93,70 +78,6 @@ def main():
         # so if we want to use a jsonl file for evaluation we need to get the "train" split
         # from the loaded dataset
         eval_split = 'train'
-    elif args.dataset == 'snli+contrast':
-        # Combined SNLI and SNLI contrast dataset for training
-        dataset_id = ('snli+contrast',)
-        print("Loading combined SNLI + SNLI contrast dataset...")
-
-        # Load both datasets
-        snli_dataset = datasets.load_dataset('snli')
-        contrast_dataset = datasets.load_dataset('AntoineBlanot/snli-contrast')
-
-        # Process contrast dataset using shared label conversion function
-        contrast_train = contrast_dataset['train'].map(convert_contrast_labels, batched=True) if 'train' in contrast_dataset else None
-        contrast_test = contrast_dataset['test'].map(convert_contrast_labels, batched=True)
-
-        # Filter SNLI to remove examples with no label (-1)
-        snli_train = snli_dataset['train'].filter(lambda ex: ex['label'] != -1)
-        snli_val = snli_dataset['validation'].filter(lambda ex: ex['label'] != -1)
-
-        # Remove extra columns from contrast dataset first
-        if contrast_train:
-            contrast_train = contrast_train.remove_columns(['instruction', 'label_name'])
-        contrast_test = contrast_test.remove_columns(['instruction', 'label_name'])
-
-        # Cast both datasets to have the same feature types
-        common_features = Features({
-            'premise': Value('string'),
-            'hypothesis': Value('string'),
-            'label': Value('int64')
-        })
-
-        snli_train = snli_train.cast(common_features)
-        snli_val = snli_val.cast(common_features)
-        if contrast_train:
-            contrast_train = contrast_train.cast(common_features)
-        contrast_test = contrast_test.cast(common_features)
-
-        # Combine datasets
-        dataset = {}
-        if contrast_train:
-            # Combine SNLI train with contrast train
-            dataset['train'] = concatenate_datasets([snli_train, contrast_train])
-            print(f"Combined training set: {len(snli_train)} SNLI + {len(contrast_train)} contrast = {len(dataset['train'])} examples")
-        else:
-            # Use only SNLI train if no contrast train available
-            dataset['train'] = snli_train
-            print(f"Training set: {len(dataset['train'])} SNLI examples (no contrast train split available)")
-
-        # Use SNLI validation for evaluation
-        dataset['validation'] = snli_val
-        eval_split = 'validation'
-
-    elif args.dataset == 'snli-contrast':
-        # Special handling for SNLI contrast dataset
-        dataset_id = ('AntoineBlanot/snli-contrast',)
-        print("Loading SNLI contrast dataset for training...")
-        raw_dataset = datasets.load_dataset('AntoineBlanot/snli-contrast')
-
-        # Apply label conversion to both train and test splits using shared function
-        dataset = {}
-        if 'train' in raw_dataset:
-            dataset['train'] = raw_dataset['train'].map(convert_contrast_labels, batched=True)
-        dataset['test'] = raw_dataset['test'].map(convert_contrast_labels, batched=True)
-
-        eval_split = 'test'
-        print(f"SNLI contrast dataset loaded: {len(dataset.get('train', []))} train, {len(dataset['test'])} test examples")
     else:
         default_datasets = {'qa': ('squad',), 'nli': ('snli',)}
         dataset_id = tuple(args.dataset.split(':')) if args.dataset is not None else \
@@ -203,8 +124,33 @@ def main():
     train_dataset_featurized = None
     eval_dataset_featurized = None
     anli_datasets_featurized = {}
-    contrast_datasets_featurized = {}
-    if training_args.do_train:
+    
+    # Check if we should use contrastive learning
+    if args.use_contrastive_learning and args.task == 'nli':
+        print("Using contrastive learning with NLIContrastTrainer")
+        print("Grouping SNLI examples by premise for natural contrastive bundles...")
+        
+        # Use SNLI dataset for contrastive learning (it already has multiple hypotheses per premise)
+        if 'train' not in dataset:
+            # Load SNLI if not already loaded
+            print("Loading SNLI dataset...")
+            snli_dataset = datasets.load_dataset('snli')
+            train_dataset = snli_dataset['train'].filter(lambda ex: ex['label'] != -1)
+        else:
+            train_dataset = dataset['train']
+        
+        # Apply sample limit if specified
+        if args.max_train_samples:
+            train_dataset = train_dataset.select(range(args.max_train_samples))
+        
+        # Create contrastive dataset that groups by premise
+        train_dataset_featurized = ContrastiveNLIDataset(
+            train_dataset,
+            tokenizer=tokenizer,
+            max_length=args.max_length
+        )
+        print(f"Created ContrastiveNLIDataset with {len(train_dataset_featurized)} bundles")
+    elif training_args.do_train:
         train_dataset = dataset['train']
         if args.max_train_samples:
             train_dataset = train_dataset.select(range(args.max_train_samples))
@@ -214,7 +160,7 @@ def main():
             num_proc=NUM_PREPROCESSING_WORKERS,
             remove_columns=train_dataset.column_names
         )
-    if training_args.do_eval or args.do_eval_anli or args.do_eval_contrast:
+    if training_args.do_eval or args.do_eval_anli:
         # Handle ANLI evaluation
         if args.do_eval_anli:
             # Load ANLI dataset
@@ -231,31 +177,6 @@ def main():
                     remove_columns=anli_round.column_names
                 )
 
-        # Handle contrast set evaluation
-        if args.do_eval_contrast:
-            # Load SNLI contrast set
-            try:
-                print("Loading SNLI contrast set...")
-                # Load SNLI contrast set from AntoineBlanot
-                contrast_dataset = datasets.load_dataset('AntoineBlanot/snli-contrast')
-
-                contrast_data = contrast_dataset['test']
-
-                # Convert label_name to numeric label using shared function
-                contrast_data = contrast_data.map(convert_contrast_labels, batched=True)
-
-                if args.max_eval_samples:
-                    contrast_data = contrast_data.select(range(min(args.max_eval_samples, len(contrast_data))))
-
-                contrast_datasets_featurized['snli_contrast'] = contrast_data.map(
-                    prepare_eval_dataset,
-                    batched=True,
-                    num_proc=NUM_PREPROCESSING_WORKERS,
-                    remove_columns=contrast_data.column_names
-                )
-                print(f"Successfully loaded SNLI contrast set with {len(contrast_data)} examples")
-            except Exception as e:
-                print(f"Warning: Could not load SNLI contrast set: {e}")
     if training_args.do_eval:
         eval_dataset = dataset[eval_split]
         if args.max_eval_samples:
@@ -270,6 +191,7 @@ def main():
     # Select the training configuration
     trainer_class = Trainer
     eval_kwargs = {}
+    trainer_kwargs = {}
     # If you want to use custom metrics, you should define your own "compute_metrics" function.
     # For an example of a valid compute_metrics function, see compute_accuracy in helpers.py.
     compute_metrics = None
@@ -283,6 +205,13 @@ def main():
             predictions=eval_preds.predictions, references=eval_preds.label_ids)
     elif args.task == 'nli':
         compute_metrics = compute_accuracy
+        # Use contrastive trainer if requested
+        if args.use_contrastive_learning:
+            trainer_class = NLIContrastTrainer
+            trainer_kwargs['contrast_weight'] = args.contrast_weight
+            trainer_kwargs['temperature'] = args.contrast_temperature
+            trainer_kwargs['data_collator'] = ContrastiveDataCollator(tokenizer)
+            print(f"Using NLIContrastTrainer with contrast_weight={args.contrast_weight}, temperature={args.contrast_temperature}")
 
 
     # This function wraps the compute_metrics function, storing the model's predictions
@@ -294,13 +223,18 @@ def main():
         return compute_metrics(eval_preds)
 
     # Initialize the Trainer object with the specified arguments and the model and dataset we loaded above
+    # Extract data_collator from trainer_kwargs if present
+    data_collator = trainer_kwargs.pop('data_collator', None)
+    
     trainer = trainer_class(
         model=model,
         args=training_args,
         train_dataset=train_dataset_featurized,
         eval_dataset=eval_dataset_featurized,
         tokenizer=tokenizer,
-        compute_metrics=compute_metrics_and_store_predictions
+        compute_metrics=compute_metrics_and_store_predictions,
+        data_collator=data_collator,
+        **trainer_kwargs
     )
     # Train and/or evaluate
     if training_args.do_train:
@@ -410,57 +344,6 @@ def main():
             avg_accuracy = sum(r.get('eval_accuracy', 0) for r in anli_results.values()) / len(anli_results)
             print(f'\nAverage ANLI accuracy across all rounds: {avg_accuracy:.4f}')
 
-    # Evaluate on contrast sets if requested
-    if args.do_eval_contrast:
-        print('\nEvaluating on NLI contrast sets...')
-        contrast_results = {}
-        contrast_predictions = {}
-
-        # Keep reference to original contrast data
-        contrast_dataset_original = datasets.load_dataset('AntoineBlanot/snli-contrast')['test']
-
-        for contrast_name in contrast_datasets_featurized:
-            print(f'\nEvaluating on {contrast_name}...')
-            # Reset eval_predictions for this contrast set
-            eval_predictions = None
-
-            # Update trainer's eval dataset
-            trainer.eval_dataset = contrast_datasets_featurized[contrast_name]
-            contrast_result = trainer.evaluate()
-            contrast_results[contrast_name] = contrast_result
-            contrast_predictions[contrast_name] = eval_predictions
-            print(f'{contrast_name} results:')
-            print(contrast_result)
-
-        # Save contrast set results
-        if contrast_results:
-            os.makedirs(training_args.output_dir, exist_ok=True)
-            with open(os.path.join(training_args.output_dir, 'contrast_eval_metrics.json'), encoding='utf-8', mode='w') as f:
-                json.dump(contrast_results, f, indent=2)
-
-            # Save contrast set predictions
-            for contrast_name, preds in contrast_predictions.items():
-                if preds is not None:
-                    with open(os.path.join(training_args.output_dir, f'{contrast_name}_predictions.jsonl'), encoding='utf-8', mode='w') as f:
-                        # Get the processed contrast data with labels
-                        contrast_data = contrast_dataset_original
-
-                        # Apply the same label conversion using shared function
-                        contrast_data = contrast_data.map(convert_contrast_labels, batched=True)
-                        if args.max_eval_samples:
-                            contrast_data = contrast_data.select(range(min(args.max_eval_samples, len(contrast_data))))
-
-                        for i, example in enumerate(contrast_data):
-                            example_with_prediction = dict(example)
-                            example_with_prediction['predicted_scores'] = preds.predictions[i].tolist()
-                            example_with_prediction['predicted_label'] = int(preds.predictions[i].argmax())
-                            f.write(json.dumps(example_with_prediction))
-                            f.write('\n')
-
-            # Print average accuracy if available
-            if all('eval_accuracy' in r for r in contrast_results.values()):
-                avg_accuracy = sum(r.get('eval_accuracy', 0) for r in contrast_results.values()) / len(contrast_results)
-                print(f'\nAverage contrast set accuracy: {avg_accuracy:.4f}')
 
 
 def print_confusion_matrix_from_file(predictions_file, task='nli'):
