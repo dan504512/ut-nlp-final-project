@@ -32,6 +32,12 @@ To evaluate the final trained model on the SNLI dev set, you can use
 
 `python3 run.py --do_eval --task nli --dataset snli --model ./trained_model/ --output_dir ./eval_output/`
 
+To continue fine-tuning the provided SNLI checkpoint on the ANLI adversarial dataset (training on rounds r1-r3 and validating on dev r1-r3), run:
+
+`python3 run.py --do_train --do_eval --task nli --dataset anli --model ./trained_model --output_dir ./trained_model_anli`
+
+Add `--do_eval_anli` to also evaluate on ANLI test rounds after training.
+
 To prevent `run.py` from trying to use a GPU for training, pass the argument `--no_cuda`.
 
 To train/evaluate a question answering model on SQuAD instead, change `--task nli` and `--dataset snli` to `--task qa` and `--dataset squad`.
@@ -70,5 +76,3 @@ This command looks slightly different if you're not using `bash` on Linux. The [
 Once you've activated your virtual environment, you can use `pip` to install packages the way you normally would, but the installed
 packages will stay in the virtual environment instead of your global Python installation. Only the virtual environment's Python
 executable will be able to see these packages.
-
-

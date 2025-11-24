@@ -159,6 +159,27 @@ def main():
 
         eval_split = 'test'
         print(f"SNLI contrast dataset loaded: {len(dataset.get('train', []))} train, {len(dataset['test'])} test examples")
+    elif args.dataset == 'anli':
+        # Special handling for ANLI dataset (three adversarial rounds)
+        dataset_id = ('anli',)
+        print("Loading ANLI dataset (train_r1+r2+r3; dev_r1+r2+r3 for eval)...")
+        raw_dataset = datasets.load_dataset('anli')
+
+        # Combine training rounds
+        train_rounds = [raw_dataset[split] for split in ['train_r1', 'train_r2', 'train_r3'] if split in raw_dataset]
+        if not train_rounds:
+            raise ValueError("ANLI dataset missing train splits (expected train_r1/train_r2/train_r3).")
+        train_set = concatenate_datasets(train_rounds)
+
+        # Combine dev rounds for validation
+        dev_rounds = [raw_dataset[split] for split in ['dev_r1', 'dev_r2', 'dev_r3'] if split in raw_dataset]
+        if not dev_rounds:
+            raise ValueError("ANLI dataset missing dev splits (expected dev_r1/dev_r2/dev_r3).")
+        dev_set = concatenate_datasets(dev_rounds)
+
+        dataset = {'train': train_set, 'validation': dev_set}
+        eval_split = 'validation'
+        print(f"ANLI dataset loaded: {len(train_set)} train examples, {len(dev_set)} validation examples")
     else:
         default_datasets = {'qa': ('squad',), 'nli': ('snli',)}
         dataset_id = tuple(args.dataset.split(':')) if args.dataset is not None else \
