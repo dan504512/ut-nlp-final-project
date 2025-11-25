@@ -8,6 +8,8 @@ from helpers import prepare_dataset_nli, prepare_train_dataset_qa, \
 import os
 import json
 import numpy as np
+import random
+import torch
 from collections import Counter
 
 NUM_PREPROCESSING_WORKERS = 2
@@ -64,6 +66,14 @@ def main():
                       help='Temperature for contrastive softmax. Lower = sharper. Default 0.1')
 
     training_args, args = argp.parse_args_into_dataclasses()
+
+    # Set seeds for reproducibility
+    seed = 42 #training_args.seed
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
 
     # Dataset selection
     # IMPORTANT: this code path allows you to load custom datasets different from the standard SQuAD or SNLI ones.
@@ -225,7 +235,10 @@ def main():
     # Initialize the Trainer object with the specified arguments and the model and dataset we loaded above
     # Extract data_collator from trainer_kwargs if present
     data_collator = trainer_kwargs.pop('data_collator', None)
-    
+
+    # Override training args to set epochs to 1
+    training_args.num_train_epochs = 1
+
     trainer = trainer_class(
         model=model,
         args=training_args,
