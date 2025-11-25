@@ -59,11 +59,11 @@ def main():
     argp.add_argument('--print_confusion_matrix', type=str, default=None,
                       help='Print confusion matrix for the specified predictions file (JSONL format).')
     argp.add_argument('--use_contrastive_learning', action='store_true',
-                      help='Use contrastive learning with NLIContrastTrainer (processes originals and contrasts together).')
-    argp.add_argument('--contrast_weight', type=float, default=0.5,
-                      help='Weight for contrastive loss (0=only CE, 1=only contrastive). Default 0.5')
-    argp.add_argument('--contrast_temperature', type=float, default=0.1,
-                      help='Temperature for contrastive softmax. Lower = sharper. Default 0.1')
+                      help='Use contrastive learning with margin ranking loss for NLI.')
+    argp.add_argument('--contrast_weight', type=float, default=0.25,
+                      help='Weight for margin ranking loss (0=only CE, 1=only margin). Default 0.5')
+    argp.add_argument('--contrast_margin', type=float, default=0.5,
+                      help='Margin for ranking loss. Correct predictions should be more confident by this margin. Default 0.5')
 
     training_args, args = argp.parse_args_into_dataclasses()
 
@@ -134,12 +134,12 @@ def main():
     train_dataset_featurized = None
     eval_dataset_featurized = None
     anli_datasets_featurized = {}
-    
+
     # Check if we should use contrastive learning
     if args.use_contrastive_learning and args.task == 'nli':
         print("Using contrastive learning with NLIContrastTrainer")
         print("Grouping SNLI examples by premise for natural contrastive bundles...")
-        
+
         # Use SNLI dataset for contrastive learning (it already has multiple hypotheses per premise)
         if 'train' not in dataset:
             # Load SNLI if not already loaded
@@ -148,11 +148,11 @@ def main():
             train_dataset = snli_dataset['train'].filter(lambda ex: ex['label'] != -1)
         else:
             train_dataset = dataset['train']
-        
+
         # Apply sample limit if specified
         if args.max_train_samples:
             train_dataset = train_dataset.select(range(args.max_train_samples))
-        
+
         # Create contrastive dataset that groups by premise
         train_dataset_featurized = ContrastiveNLIDataset(
             train_dataset,
@@ -219,9 +219,9 @@ def main():
         if args.use_contrastive_learning:
             trainer_class = NLIContrastTrainer
             trainer_kwargs['contrast_weight'] = args.contrast_weight
-            trainer_kwargs['temperature'] = args.contrast_temperature
+            trainer_kwargs['margin'] = args.contrast_margin
             trainer_kwargs['data_collator'] = ContrastiveDataCollator(tokenizer)
-            print(f"Using NLIContrastTrainer with contrast_weight={args.contrast_weight}, temperature={args.contrast_temperature}")
+            print(f"Using NLIContrastTrainer with contrast_weight={args.contrast_weight}, margin={args.contrast_margin}")
 
 
     # This function wraps the compute_metrics function, storing the model's predictions

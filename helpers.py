@@ -318,14 +318,19 @@ class QuestionAnsweringTrainer(Trainer):
 
 
 class ContrastBundle:
-    """Groups an original example with its contrast examples."""
-    def __init__(self, original, contrasts):
-        self.original = original
-        self.contrasts = contrasts
+    """Groups multiple hypothesis examples for the same premise."""
+    def __init__(self, premise, hypotheses):
+        """
+        Args:
+            premise: The shared premise text
+            hypotheses: List of dicts with 'hypothesis' and 'label' keys
+        """
+        self.premise = premise
+        self.hypotheses = hypotheses  # List of {'hypothesis': str, 'label': int}
 
 
 class ContrastiveNLIDataset(Dataset):
-    """Dataset that groups original examples with their contrast sets."""
+    """Dataset that groups multiple hypotheses for the same premise."""
 
     def __init__(self, snli_dataset, tokenizer=None, max_length=128, min_hypotheses=2):
         """
@@ -338,35 +343,35 @@ class ContrastiveNLIDataset(Dataset):
         self.tokenizer = tokenizer
         self.max_length = max_length
         self.bundles = []
-        
+
         # Group examples by premise
         from collections import defaultdict
         premise_groups = defaultdict(list)
-        
-        # Limit for memory efficiency
-        max_examples = min(len(snli_dataset), 50000) if hasattr(snli_dataset, '__len__') else 50000
-        
-        for idx in range(max_examples):
+
+        n_examples = len(snli_dataset)
+
+        for idx in range(n_examples):
             ex = snli_dataset[idx]
             premise_groups[ex['premise']].append({
                 'hypothesis': ex['hypothesis'],
                 'label': ex['label']
             })
-        
-        # Create bundles from groups with enough hypotheses
+
+        # Create bundles from groups with enough hypotheses and diverse labels
         for premise, hypotheses in premise_groups.items():
             if len(hypotheses) >= min_hypotheses:
-                # Use first hypothesis as "original", rest as "contrasts"
-                bundle = ContrastBundle(
-                    original={'premise': premise, 'hypothesis': hypotheses[0]['hypothesis'], 'label': hypotheses[0]['label']},
-                    contrasts=[{'premise': premise, 'hypothesis': h['hypothesis'], 'label': h['label']} 
-                               for h in hypotheses[1:]]
-                )
-                self.bundles.append(bundle)
-        
+                # Check if we have at least 2 different labels for meaningful contrast
+                unique_labels = set(h['label'] for h in hypotheses)
+                if len(unique_labels) >= 2:
+                    bundle = ContrastBundle(
+                        premise=premise,
+                        hypotheses=hypotheses
+                    )
+                    self.bundles.append(bundle)
+
         if self.bundles:
-            print(f"Created {len(self.bundles)} bundles from {max_examples} examples")
-            avg_hyp = sum(len(b.contrasts) + 1 for b in self.bundles) / len(self.bundles)
+            print(f"Created {len(self.bundles)} bundles from {n_examples} examples")
+            avg_hyp = sum(len(b.hypotheses) for b in self.bundles) / len(self.bundles)
             print(f"Average hypotheses per bundle: {avg_hyp:.1f}")
 
     def __len__(self):
@@ -375,147 +380,126 @@ class ContrastiveNLIDataset(Dataset):
     def __getitem__(self, idx):
         bundle = self.bundles[idx]
 
-        # Debug
-        # print(f"Getting item {idx}, bundle.original type: {type(bundle.original)}")
+        # Tokenize all hypotheses with the same premise
+        all_inputs = []
+        all_labels = []
 
-        # Tokenize original
-        original_inputs = self.tokenizer(
-            bundle.original['premise'],
-            bundle.original['hypothesis'],
-            truncation=True,
-            max_length=self.max_length,
-            padding='max_length',
-            return_tensors='pt'
-        )
-
-        # Tokenize contrasts
-        contrast_inputs = []
-        contrast_labels = []
-        for contrast in bundle.contrasts:
-            contrast_input = self.tokenizer(
-                contrast['premise'],
-                contrast['hypothesis'],
+        for hyp_data in bundle.hypotheses:
+            inputs = self.tokenizer(
+                bundle.premise,
+                hyp_data['hypothesis'],
                 truncation=True,
                 max_length=self.max_length,
                 padding='max_length',
                 return_tensors='pt'
             )
-            contrast_inputs.append(contrast_input)
-            contrast_labels.append(contrast['label'])
+            all_inputs.append(inputs)
+            all_labels.append(hyp_data['label'])
 
+        # Stack all inputs and labels
         return {
-            'original_input_ids': original_inputs['input_ids'].squeeze(),
-            'original_attention_mask': original_inputs['attention_mask'].squeeze(),
-            'original_label': bundle.original['label'],
-            'contrast_input_ids': torch.stack([c['input_ids'].squeeze() for c in contrast_inputs]) if contrast_inputs else torch.tensor([]),
-            'contrast_attention_mask': torch.stack([c['attention_mask'].squeeze() for c in contrast_inputs]) if contrast_inputs else torch.tensor([]),
-            'contrast_labels': torch.tensor(contrast_labels) if contrast_labels else torch.tensor([]),
-            'has_contrasts': len(bundle.contrasts) > 0
+            'input_ids': torch.stack([inp['input_ids'].squeeze() for inp in all_inputs]),
+            'attention_mask': torch.stack([inp['attention_mask'].squeeze() for inp in all_inputs]),
+            'labels': torch.tensor(all_labels),
+            'num_hypotheses': len(bundle.hypotheses)
         }
 
 
 class NLIContrastTrainer(Trainer):
     """
-    Trainer that implements proper contrastive learning for NLI.
-    Instead of treating contrast examples as independent training samples,
-    it processes them together with their originals to create comparative learning signals.
+    Trainer that implements margin ranking loss for NLI.
+    For bundles of hypotheses sharing the same premise, ensures that
+    correct predictions have higher confidence than incorrect ones by a margin.
     """
 
-    def __init__(self, *args, contrast_weight=0.5, temperature=0.1, **kwargs):
+    def __init__(self, *args, contrast_weight=0.5, margin=0.5, **kwargs):
         super().__init__(*args, **kwargs)
-        self.contrast_weight = contrast_weight  # Weight for contrastive loss
-        self.temperature = temperature  # Temperature for contrastive softmax
+        self.contrast_weight = contrast_weight  # Weight for margin loss vs CE loss
+        self.margin = margin  # Margin for ranking loss
         # Disable remove_unused_columns since we're using custom column names
         self.args.remove_unused_columns = False
 
     def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
         """
-        Compute combined cross-entropy and contrastive loss.
+        Compute combined cross-entropy and margin ranking loss.
         """
-        # Check if we have contrast examples
-        has_contrasts = inputs.get('has_contrasts', False)
-        if isinstance(has_contrasts, torch.Tensor):
-            has_contrasts = has_contrasts.any().item()
-
-        if not has_contrasts or inputs['contrast_input_ids'].numel() == 0:
-            # No contrasts - fall back to standard loss
-            labels = inputs.pop('original_label', inputs.get('labels'))
-            # Remove contrast-related keys
-            for key in ['contrast_input_ids', 'contrast_attention_mask', 'contrast_labels', 'has_contrasts']:
-                inputs.pop(key, None)
-
-            # Rename original keys to standard names
-            if 'original_input_ids' in inputs:
-                inputs['input_ids'] = inputs.pop('original_input_ids')
-            if 'original_attention_mask' in inputs:
-                inputs['attention_mask'] = inputs.pop('original_attention_mask')
-            inputs['labels'] = labels
-
+        # Check if this is bundled format
+        if 'num_hypotheses' not in inputs:
+            # Standard format - just use regular CE loss
             outputs = model(**inputs)
             loss = outputs.loss if outputs.loss is not None else outputs['loss']
             return (loss, outputs) if return_outputs else loss
 
-        # Process original examples
-        original_outputs = model(
-            input_ids=inputs['original_input_ids'],
-            attention_mask=inputs['original_attention_mask']
+        batch_size = inputs['input_ids'].size(0)
+        # num_hypotheses should be the same for all items in a batch after padding
+        num_hypotheses = inputs['input_ids'].size(1)  # Get from tensor shape instead
+
+        # Reshape inputs to process all hypotheses
+        # input_ids shape: (batch_size, num_hypotheses, seq_len)
+        input_ids = inputs['input_ids'].view(batch_size * num_hypotheses, -1)
+        attention_mask = inputs['attention_mask'].view(batch_size * num_hypotheses, -1)
+        labels = inputs['labels'].view(-1)
+
+        # Forward pass for all hypotheses
+        outputs = model(
+            input_ids=input_ids,
+            attention_mask=attention_mask
         )
-        original_logits = original_outputs.logits
+        logits = outputs.logits  # Shape: (batch_size * num_hypotheses, num_classes)
 
-        # Standard cross-entropy loss for originals
-        ce_loss = F.cross_entropy(
-            original_logits,
-            inputs['original_label']
-        )
+        # Standard cross-entropy loss (ignores -100 labels automatically)
+        ce_loss = F.cross_entropy(logits, labels)
 
-        # Process contrast examples
-        batch_size = inputs['original_input_ids'].size(0)
-        contrast_losses = []
+        # Compute margin ranking loss
+        margin_losses = []
 
-        for i in range(batch_size):
-            if inputs['contrast_input_ids'][i].numel() > 0:
-                # Get contrasts for this example
-                contrast_ids = inputs['contrast_input_ids'][i]
-                contrast_mask = inputs['contrast_attention_mask'][i]
-                contrast_labels = inputs['contrast_labels'][i]
+        # Process each bundle
+        for b in range(batch_size):
+            start_idx = b * num_hypotheses
+            end_idx = start_idx + num_hypotheses
 
-                # Skip if no contrasts
-                if len(contrast_ids.shape) == 1:
-                    contrast_ids = contrast_ids.unsqueeze(0)
-                    contrast_mask = contrast_mask.unsqueeze(0)
-                    contrast_labels = contrast_labels.unsqueeze(0)
+            bundle_logits = logits[start_idx:end_idx]  # (num_hypotheses, num_classes)
+            bundle_labels = labels[start_idx:end_idx]   # (num_hypotheses,)
 
-                # Forward pass for contrasts
-                contrast_outputs = model(
-                    input_ids=contrast_ids,
-                    attention_mask=contrast_mask
-                )
-                contrast_logits = contrast_outputs.logits
+            # Skip padded examples (labeled with -100)
+            valid_mask = bundle_labels != -100
+            if valid_mask.sum() < 2:
+                continue  # Need at least 2 valid examples for comparison
 
-                # Compute contrastive loss
-                # The original should score higher for the correct class than contrasts
-                original_score = original_logits[i].unsqueeze(0)
+            valid_logits = bundle_logits[valid_mask]
+            valid_labels = bundle_labels[valid_mask]
 
-                # Concatenate original and contrast logits
-                all_logits = torch.cat([original_score, contrast_logits], dim=0)
-
-                # Apply temperature scaling and softmax across all examples
-                all_scores = F.log_softmax(all_logits / self.temperature, dim=0)
-
-                # Contrastive loss: original should have highest score
-                # We want the original (index 0) to have the highest probability
-                contrastive_loss = -all_scores[0, inputs['original_label'][i]]
-
-                contrast_losses.append(contrastive_loss)
+            # For each pair of hypotheses with different labels
+            for i in range(len(valid_labels)):
+                for j in range(i + 1, len(valid_labels)):
+                    if valid_labels[i] != valid_labels[j]:
+                        # Original ranking approach: each hypothesis should score higher 
+                        # on its own true label than other hypotheses do
+                        
+                        # Get the label indices
+                        label_i = valid_labels[i]
+                        label_j = valid_labels[j]
+                        
+                        # Hypothesis i should score higher on label_i than hypothesis j does
+                        score_i_on_label_i = valid_logits[i][label_i]
+                        score_j_on_label_i = valid_logits[j][label_i]
+                        loss_i = torch.relu(self.margin - (score_i_on_label_i - score_j_on_label_i))
+                        margin_losses.append(loss_i)
+                        
+                        # Hypothesis j should score higher on label_j than hypothesis i does
+                        score_j_on_label_j = valid_logits[j][label_j]
+                        score_i_on_label_j = valid_logits[i][label_j]
+                        loss_j = torch.relu(self.margin - (score_j_on_label_j - score_i_on_label_j))
+                        margin_losses.append(loss_j)
 
         # Combine losses
-        if contrast_losses:
-            avg_contrast_loss = torch.stack(contrast_losses).mean()
-            total_loss = (1 - self.contrast_weight) * ce_loss + self.contrast_weight * avg_contrast_loss
+        if margin_losses:
+            margin_loss = torch.stack(margin_losses).mean()
+            total_loss = (1 - self.contrast_weight) * ce_loss + self.contrast_weight * margin_loss
         else:
             total_loss = ce_loss
 
-        return (total_loss, original_outputs) if return_outputs else total_loss
+        return (total_loss, outputs) if return_outputs else total_loss
 
     def _prepare_inputs(self, inputs: Dict[str, Union[torch.Tensor, Any]]) -> Dict[str, Union[torch.Tensor, Any]]:
         """
@@ -524,9 +508,8 @@ class NLIContrastTrainer(Trainer):
         # Move inputs to the correct device
         inputs = self._prepare_input(inputs)
 
-        # Handle both standard and contrast inputs
-        for key in ['original_input_ids', 'original_attention_mask', 'original_label',
-                    'contrast_input_ids', 'contrast_attention_mask', 'contrast_labels']:
+        # Handle bundled inputs
+        for key in ['input_ids', 'attention_mask', 'labels', 'num_hypotheses']:
             if key in inputs and isinstance(inputs[key], torch.Tensor):
                 inputs[key] = inputs[key].to(self.args.device)
 
@@ -540,110 +523,60 @@ class ContrastiveDataCollator:
         self.tokenizer = tokenizer
 
     def __call__(self, features):
-        # Debug: check what we're receiving
         if not features:
             return {}
 
-        # Debug print (commented out for production)
-        # if features:
-        #     print(f"Collator received {len(features)} features")
-        #     print(f"First feature type: {type(features[0])}")
-        #     print(f"First feature str: {str(features[0])[:200]}")  # Print first 200 chars
-        #     if isinstance(features[0], dict):
-        #         print(f"First feature keys: {list(features[0].keys())}")
-        #     elif hasattr(features[0], '__dict__'):
-        #         print(f"First feature attrs: {vars(features[0])}")
-        #     else:
-        #         print(f"First feature type: {type(features[0])}, value: {features[0]}")
+        # Check if this is bundled format with num_hypotheses
+        if isinstance(features[0], dict) and 'num_hypotheses' in features[0]:
+            # Find max number of hypotheses for padding
+            max_hypotheses = max(f['num_hypotheses'] for f in features)
+            seq_len = features[0]['input_ids'].size(-1)
 
-        # Check if this is standard format (not contrastive)
-        if isinstance(features[0], dict) and 'input_ids' in features[0]:
-            # Standard format - just pass through
-            from transformers import default_data_collator
-            return default_data_collator(features)
-
-        # Separate features into components
-        batch = {
-            'original_input_ids': [],
-            'original_attention_mask': [],
-            'original_label': [],
-            'contrast_input_ids': [],
-            'contrast_attention_mask': [],
-            'contrast_labels': [],
-            'has_contrasts': []
-        }
-
-        max_num_contrasts = 0
-        for feature in features:
-            batch['original_input_ids'].append(feature['original_input_ids'])
-            batch['original_attention_mask'].append(feature['original_attention_mask'])
-            batch['original_label'].append(feature['original_label'])
-            batch['has_contrasts'].append(feature['has_contrasts'])
-
-            # Track max number of contrasts for padding
-            if feature['has_contrasts'] and feature['contrast_input_ids'].numel() > 0:
-                num_contrasts = len(feature['contrast_input_ids']) if len(feature['contrast_input_ids'].shape) > 1 else 1
-                max_num_contrasts = max(max_num_contrasts, num_contrasts)
-
-        # Stack original tensors
-        batch['original_input_ids'] = torch.stack(batch['original_input_ids'])
-        batch['original_attention_mask'] = torch.stack(batch['original_attention_mask'])
-        batch['original_label'] = torch.tensor(batch['original_label'])
-        batch['has_contrasts'] = torch.tensor(batch['has_contrasts'])
-
-        # Handle contrast examples with padding
-        if max_num_contrasts > 0:
-            padded_contrast_ids = []
-            padded_contrast_masks = []
-            padded_contrast_labels = []
+            batch = {
+                'input_ids': [],
+                'attention_mask': [],
+                'labels': [],
+                'num_hypotheses': []
+            }
 
             for feature in features:
-                if feature['has_contrasts'] and feature['contrast_input_ids'].numel() > 0:
-                    contrast_ids = feature['contrast_input_ids']
-                    contrast_mask = feature['contrast_attention_mask']
-                    contrast_labels = feature['contrast_labels']
+                num_hyp = feature['num_hypotheses']
 
-                    # Pad to max_num_contrasts if needed
-                    if len(contrast_ids.shape) == 1:
-                        contrast_ids = contrast_ids.unsqueeze(0)
-                        contrast_mask = contrast_mask.unsqueeze(0)
-                        contrast_labels = contrast_labels.unsqueeze(0)
-
-                    current_num = contrast_ids.size(0)
-                    if current_num < max_num_contrasts:
-                        # Pad with zeros
-                        pad_size = max_num_contrasts - current_num
-                        seq_len = contrast_ids.size(1)
-                        contrast_ids = torch.cat([
-                            contrast_ids,
-                            torch.zeros(pad_size, seq_len, dtype=contrast_ids.dtype)
-                        ])
-                        contrast_mask = torch.cat([
-                            contrast_mask,
-                            torch.zeros(pad_size, seq_len, dtype=contrast_mask.dtype)
-                        ])
-                        contrast_labels = torch.cat([
-                            contrast_labels,
-                            torch.zeros(pad_size, dtype=contrast_labels.dtype)
-                        ])
-
-                    padded_contrast_ids.append(contrast_ids)
-                    padded_contrast_masks.append(contrast_mask)
-                    padded_contrast_labels.append(contrast_labels)
+                # Pad if needed
+                if num_hyp < max_hypotheses:
+                    pad_size = max_hypotheses - num_hyp
+                    # Pad with zeros
+                    padded_input_ids = torch.cat([
+                        feature['input_ids'],
+                        torch.zeros(pad_size, seq_len, dtype=feature['input_ids'].dtype)
+                    ])
+                    padded_attention_mask = torch.cat([
+                        feature['attention_mask'],
+                        torch.zeros(pad_size, seq_len, dtype=feature['attention_mask'].dtype)
+                    ])
+                    # For labels, pad with -100 (ignored by loss)
+                    padded_labels = torch.cat([
+                        feature['labels'],
+                        torch.full((pad_size,), -100, dtype=feature['labels'].dtype)
+                    ])
                 else:
-                    # No contrasts - add placeholder
-                    seq_len = batch['original_input_ids'].size(-1)
-                    padded_contrast_ids.append(torch.zeros(max_num_contrasts, seq_len, dtype=torch.long))
-                    padded_contrast_masks.append(torch.zeros(max_num_contrasts, seq_len, dtype=torch.long))
-                    padded_contrast_labels.append(torch.zeros(max_num_contrasts, dtype=torch.long))
+                    padded_input_ids = feature['input_ids']
+                    padded_attention_mask = feature['attention_mask']
+                    padded_labels = feature['labels']
 
-            batch['contrast_input_ids'] = torch.stack(padded_contrast_ids)
-            batch['contrast_attention_mask'] = torch.stack(padded_contrast_masks)
-            batch['contrast_labels'] = torch.stack(padded_contrast_labels)
+                batch['input_ids'].append(padded_input_ids)
+                batch['attention_mask'].append(padded_attention_mask)
+                batch['labels'].append(padded_labels)
+                batch['num_hypotheses'].append(num_hyp)
+
+            # Stack into batch tensors
+            batch['input_ids'] = torch.stack(batch['input_ids'])
+            batch['attention_mask'] = torch.stack(batch['attention_mask'])
+            batch['labels'] = torch.stack(batch['labels'])
+            batch['num_hypotheses'] = torch.tensor(batch['num_hypotheses'])
+
+            return batch
         else:
-            # No contrasts in batch
-            batch['contrast_input_ids'] = torch.tensor([])
-            batch['contrast_attention_mask'] = torch.tensor([])
-            batch['contrast_labels'] = torch.tensor([])
-
-        return batch
+            # Standard format - use default collator
+            from transformers import default_data_collator
+            return default_data_collator(features)
