@@ -8,6 +8,24 @@ from tqdm.auto import tqdm
 import torch
 import torch.nn.functional as F
 from torch.utils.data import Dataset
+import nltk
+from nltk.corpus import stopwords
+from nltk.tokenize import word_tokenize
+from nltk.stem import PorterStemmer
+
+# Download required NLTK data (will only download if not present)
+try:
+    nltk.data.find('tokenizers/punkt')
+except LookupError:
+    nltk.download('punkt', quiet=True)
+try:
+    nltk.data.find('tokenizers/punkt_tab')
+except LookupError:
+    nltk.download('punkt_tab', quiet=True)
+try:
+    nltk.data.find('corpora/stopwords')
+except LookupError:
+    nltk.download('stopwords', quiet=True)
 
 QA_MAX_ANSWER_LENGTH = 30
 
@@ -318,19 +336,21 @@ class QuestionAnsweringTrainer(Trainer):
 
 
 class ContrastBundle:
-    """Groups multiple hypothesis examples for the same premise."""
-    def __init__(self, premise, hypotheses):
+    """Groups multiple hypothesis examples for the same premise with pair overlap scores."""
+    def __init__(self, premise, hypotheses, pair_overlaps=None):
         """
         Args:
             premise: The shared premise text
             hypotheses: List of dicts with 'hypothesis' and 'label' keys
+            pair_overlaps: Dict mapping (i,j) tuples to overlap scores between hypotheses i and j
         """
         self.premise = premise
         self.hypotheses = hypotheses  # List of {'hypothesis': str, 'label': int}
+        self.pair_overlaps = pair_overlaps if pair_overlaps is not None else {}
 
 
 class ContrastiveNLIDataset(Dataset):
-    """Dataset that groups multiple hypotheses for the same premise."""
+    """Dataset that groups hypotheses by premise with pairwise overlap scores."""
 
     def __init__(self, snli_dataset, tokenizer=None, max_length=128, min_hypotheses=2):
         """
@@ -358,14 +378,31 @@ class ContrastiveNLIDataset(Dataset):
             })
 
         # Create bundles from groups with enough hypotheses and diverse labels
+        total_pairs = 0
+        total_overlap = 0.0
+
         for premise, hypotheses in premise_groups.items():
             if len(hypotheses) >= min_hypotheses:
                 # Check if we have at least 2 different labels for meaningful contrast
                 unique_labels = set(h['label'] for h in hypotheses)
                 if len(unique_labels) >= 2:
+                    # Calculate pairwise overlap scores
+                    pair_overlaps = {}
+                    for i in range(len(hypotheses)):
+                        for j in range(i + 1, len(hypotheses)):
+                            if hypotheses[i]['label'] != hypotheses[j]['label']:
+                                overlap_score = self._calculate_lexical_overlap(
+                                    hypotheses[i]['hypothesis'],
+                                    hypotheses[j]['hypothesis']
+                                )
+                                pair_overlaps[(i, j)] = overlap_score
+                                total_pairs += 1
+                                total_overlap += overlap_score
+
                     bundle = ContrastBundle(
                         premise=premise,
-                        hypotheses=hypotheses
+                        hypotheses=hypotheses,
+                        pair_overlaps=pair_overlaps
                     )
                     self.bundles.append(bundle)
 
@@ -373,6 +410,38 @@ class ContrastiveNLIDataset(Dataset):
             print(f"Created {len(self.bundles)} bundles from {n_examples} examples")
             avg_hyp = sum(len(b.hypotheses) for b in self.bundles) / len(self.bundles)
             print(f"Average hypotheses per bundle: {avg_hyp:.1f}")
+            if total_pairs > 0:
+                print(f"Total contrast pairs: {total_pairs}, Average overlap: {total_overlap/total_pairs:.3f}")
+
+    def _calculate_lexical_overlap(self, text1, text2):
+        """Calculate Jaccard similarity (lexical overlap) between two texts using NLTK."""
+        # Initialize stemmer and get stopwords
+        stemmer = PorterStemmer()
+        stop_words = set(stopwords.words('english'))
+
+        # Tokenize using NLTK
+        tokens1 = word_tokenize(text1.lower())
+        tokens2 = word_tokenize(text2.lower())
+
+        # Filter out stopwords and non-alphabetic tokens, then stem
+        words1 = set()
+        for token in tokens1:
+            if token.isalpha() and token not in stop_words:
+                words1.add(stemmer.stem(token))
+
+        words2 = set()
+        for token in tokens2:
+            if token.isalpha() and token not in stop_words:
+                words2.add(stemmer.stem(token))
+
+        if not words1 or not words2:
+            return 0.0
+
+        # Jaccard similarity: intersection / union
+        intersection = len(words1 & words2)
+        union = len(words1 | words2)
+
+        return intersection / union if union > 0 else 0.0
 
     def __len__(self):
         return len(self.bundles)
@@ -401,20 +470,21 @@ class ContrastiveNLIDataset(Dataset):
             'input_ids': torch.stack([inp['input_ids'].squeeze() for inp in all_inputs]),
             'attention_mask': torch.stack([inp['attention_mask'].squeeze() for inp in all_inputs]),
             'labels': torch.tensor(all_labels),
-            'num_hypotheses': len(bundle.hypotheses)
+            'num_hypotheses': len(bundle.hypotheses),
+            'pair_overlaps': bundle.pair_overlaps  # Dict of (i,j) -> overlap_score
         }
 
 
 class NLIContrastTrainer(Trainer):
     """
-    Trainer that implements margin ranking loss for NLI.
-    For bundles of hypotheses sharing the same premise, ensures that
-    correct predictions have higher confidence than incorrect ones by a margin.
+    Trainer that implements margin ranking loss for NLI with dynamic weights.
+    For pairs of hypotheses sharing the same premise, ensures that each scores
+    highest on its correct label, with weight adjusted by lexical overlap.
     """
 
-    def __init__(self, *args, contrast_weight=0.5, margin=0.5, **kwargs):
+    def __init__(self, *args, base_contrast_weight=0.25, margin=0.5, **kwargs):
         super().__init__(*args, **kwargs)
-        self.contrast_weight = contrast_weight  # Weight for margin loss vs CE loss
+        self.base_contrast_weight = base_contrast_weight  # Base weight for margin loss (will be scaled by overlap)
         self.margin = margin  # Margin for ranking loss
         # Disable remove_unused_columns since we're using custom column names
         self.args.remove_unused_columns = False
@@ -423,8 +493,8 @@ class NLIContrastTrainer(Trainer):
         """
         Compute combined cross-entropy and margin ranking loss.
         """
-        # Check if this is bundled format
-        if 'num_hypotheses' not in inputs:
+        # Check if this is bundled format with pair overlaps
+        if 'pair_overlaps' not in inputs:
             # Standard format - just use regular CE loss
             outputs = model(**inputs)
             loss = outputs.loss if outputs.loss is not None else outputs['loss']
@@ -432,7 +502,10 @@ class NLIContrastTrainer(Trainer):
 
         batch_size = inputs['input_ids'].size(0)
         # num_hypotheses should be the same for all items in a batch after padding
-        num_hypotheses = inputs['input_ids'].size(1)  # Get from tensor shape instead
+        num_hypotheses = inputs['input_ids'].size(1)  # Get from tensor shape
+
+        # Get pair overlap dictionaries for each batch item
+        pair_overlaps_batch = inputs['pair_overlaps']  # List of dicts
 
         # Reshape inputs to process all hypotheses
         # input_ids shape: (batch_size, num_hypotheses, seq_len)
@@ -450,7 +523,7 @@ class NLIContrastTrainer(Trainer):
         # Standard cross-entropy loss (ignores -100 labels automatically)
         ce_loss = F.cross_entropy(logits, labels)
 
-        # Compute margin ranking loss
+        # Compute margin ranking loss with dynamic weights
         margin_losses = []
 
         # Process each bundle
@@ -469,33 +542,38 @@ class NLIContrastTrainer(Trainer):
             valid_logits = bundle_logits[valid_mask]
             valid_labels = bundle_labels[valid_mask]
 
+            # Get pair overlaps for this bundle
+            pair_overlaps = pair_overlaps_batch[b] if b < len(pair_overlaps_batch) else {}
+
             # For each pair of hypotheses with different labels
             for i in range(len(valid_labels)):
                 for j in range(i + 1, len(valid_labels)):
                     if valid_labels[i] != valid_labels[j]:
-                        # Original ranking approach: each hypothesis should score higher 
-                        # on its own true label than other hypotheses do
-                        
+                        # Get dynamic weight based on lexical overlap
+                        overlap = pair_overlaps.get((i, j), 0.0)
+                        # Map overlap (0-1) to weight (0.5-2.0)
+                        dynamic_weight = 0.5 + 1.5 * overlap
+
                         # Get the label indices
                         label_i = valid_labels[i]
                         label_j = valid_labels[j]
-                        
+
                         # Hypothesis i should score higher on label_i than hypothesis j does
                         score_i_on_label_i = valid_logits[i][label_i]
                         score_j_on_label_i = valid_logits[j][label_i]
-                        loss_i = torch.relu(self.margin - (score_i_on_label_i - score_j_on_label_i))
+                        loss_i = dynamic_weight * torch.relu(self.margin - (score_i_on_label_i - score_j_on_label_i))
                         margin_losses.append(loss_i)
-                        
+
                         # Hypothesis j should score higher on label_j than hypothesis i does
                         score_j_on_label_j = valid_logits[j][label_j]
                         score_i_on_label_j = valid_logits[i][label_j]
-                        loss_j = torch.relu(self.margin - (score_j_on_label_j - score_i_on_label_j))
+                        loss_j = dynamic_weight * torch.relu(self.margin - (score_j_on_label_j - score_i_on_label_j))
                         margin_losses.append(loss_j)
 
         # Combine losses
         if margin_losses:
             margin_loss = torch.stack(margin_losses).mean()
-            total_loss = (1 - self.contrast_weight) * ce_loss + self.contrast_weight * margin_loss
+            total_loss = (1 - self.base_contrast_weight) * ce_loss + self.base_contrast_weight * margin_loss
         else:
             total_loss = ce_loss
 
@@ -536,11 +614,13 @@ class ContrastiveDataCollator:
                 'input_ids': [],
                 'attention_mask': [],
                 'labels': [],
-                'num_hypotheses': []
+                'num_hypotheses': [],
+                'pair_overlaps': []  # List of dicts
             }
 
             for feature in features:
                 num_hyp = feature['num_hypotheses']
+                batch['pair_overlaps'].append(feature.get('pair_overlaps', {}))
 
                 # Pad if needed
                 if num_hyp < max_hypotheses:

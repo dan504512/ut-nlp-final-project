@@ -60,7 +60,7 @@ def main():
                       help='Print confusion matrix for the specified predictions file (JSONL format).')
     argp.add_argument('--use_contrastive_learning', action='store_true',
                       help='Use contrastive learning with margin ranking loss for NLI.')
-    argp.add_argument('--contrast_weight', type=float, default=0.25,
+    argp.add_argument('--contrast_weight', type=float, default=0.5,
                       help='Weight for margin ranking loss (0=only CE, 1=only margin). Default 0.5')
     argp.add_argument('--contrast_margin', type=float, default=0.5,
                       help='Margin for ranking loss. Correct predictions should be more confident by this margin. Default 0.5')
@@ -218,7 +218,7 @@ def main():
         # Use contrastive trainer if requested
         if args.use_contrastive_learning:
             trainer_class = NLIContrastTrainer
-            trainer_kwargs['contrast_weight'] = args.contrast_weight
+            trainer_kwargs['base_contrast_weight'] = args.contrast_weight
             trainer_kwargs['margin'] = args.contrast_margin
             trainer_kwargs['data_collator'] = ContrastiveDataCollator(tokenizer)
             print(f"Using NLIContrastTrainer with contrast_weight={args.contrast_weight}, margin={args.contrast_margin}")
