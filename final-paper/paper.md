@@ -1,17 +1,9 @@
 ---
-title: "Final Paper"
-# author: "Dan Robert"
-date: "December 2025"
-# theme: "Madrid"
-# colortheme: "seagull"
-# fonttheme: "structurebold"
-# aspectratio: 169
-
-# PDF engine & geometry
-# pdf-engine: xelatex
-# geometry: margin=1in
 geometry: top=1in, bottom=1in, left=1in, right=1in
 fontsize: 10pt
+documentclass: article
+classoption: 
+  - notitlepage
 ---
 
 # Abstract
