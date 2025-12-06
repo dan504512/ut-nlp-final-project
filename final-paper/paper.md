@@ -86,7 +86,18 @@ Our contrastive NLI approach follows a similar bundle-based philosophy: we treat
 
 ---
 
+## Training Configuration and Evaluation
+
 ![Training flowchart for both contrastive and adversarial fine-tuning approaches](figs/training-flowchart.png)
+
+| **Hyperparameters** | **Evaluation Metrics** |
+|-------------------|----------------------|
+| Batch size: 8 | Accuracy (SNLI, ANLI per round) |
+| Learning rate: 5e-5 with linear warmup | Calibration (ECE, MCE, NLL, Brier) |
+| Optimizer: AdamW | Error categories by linguistic phenomena |
+| Max sequence length: 128 tokens | Performance by lexical overlap level |
+| Weight decay: 0.0 | |
+| Max gradient norm: 1.0 | |
 
 ## Part I: Contrastive Learning for Calibration
 
@@ -140,22 +151,6 @@ We use the Stanford Natural Language Inference (SNLI) dataset (Bowman et al., 20
 2. **Contrastive Fine-tuning**: Continue training for 1 additional epoch with our contrastive objective
 
 For the experimental condition, we set $\alpha = 0.5$ and margin $m = 0.5$. The control condition uses $\alpha = 0$ (standard fine-tuning for one additional epoch).
-
-### 4.3 Hyperparameters
-
-- Batch size: 32
-- Learning rate: 5e-5 with linear warmup
-- Optimizer: AdamW
-- Max sequence length: 128 tokens
-
-### 4.4 Evaluation Metrics
-
-We evaluate on:
-
-- Overall accuracy on SNLI and ANLI
-- Confidence calibration metrics (ECE, MCE, NLL, Brier score)
-- Fine-grained error categorization based on linguistic phenomena
-- Performance on high vs. low lexical overlap subsets
 
 ## 5. Contrastive Results
 
@@ -241,13 +236,7 @@ ANLI dataset composition:
 2. **Control (SNLI$\rightarrow$SNLI)**: Starting from baseline checkpoint, fine-tune 1 additional epoch on SNLI only
 3. **Adversarial (SNLI$\rightarrow$SNLI+ANLI)**: Starting from baseline checkpoint, fine-tune 1 epoch on concatenated SNLI+ANLI
 
-### 8.3 Hyperparameters
-
-- Batch size: 8
-- Learning rate: 5e-5 with linear scheduler, no warmup
-- Optimizer: AdamW ($\beta_1$=0.9, $\beta_2$=0.999, $\epsilon$=1e-8)
-- Max sequence length: 128 tokens
-- Weight decay: 0.0, max grad norm: 1.0
+### 8.3 Training Configuration
 
 ## 9. Adversarial Results
 
@@ -272,9 +261,7 @@ The baseline model collapses on ANLI (~30.6\%, essentially random for 3-way clas
 - A3: +8.4 points (26.4\% relative improvement)
 - Combined: +10.8 points (34.2\% relative improvement)
 
-![Figure 1: SNLI vs ANLI accuracy across models](figs/adversarial/adversarial-results.png)
-
-![Figure 2: ANLI round-level improvements](figs/adversarial/adversarial-improvements.png)
+![SNLI vs ANLI accuracy across models](figs/adversarial/adversarial-results-improvements.png)
 
 ### 9.4 Qualitative Error Analysis
 
