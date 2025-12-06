@@ -290,11 +290,26 @@ The baseline model collapses on ANLI (~30.6\%, essentially random for 3-way clas
 
 Adversarial fine-tuning fixes several error types that persist in the control model:
 
-| Error Type | Example | Control | Adversarial |
-|------------|---------|---------|-------------|
-| **Negation trap** | P: "World Premiere ... released by Paramount Pictures"<br>H: "World Premiere was not released by Universal Studios"<br>Gold: Entailment | X (Contradiction) | $\checkmark$ (Entailment) |
-| **World knowledge** | P: "The Second Jungle Book ... not based on 'The Second Jungle Book'"<br>H: "The first Jungle Book was written before 1997"<br>Gold: Entailment | X (Contradiction) | $\checkmark$ (Entailment) |
-| **Lexical overlap** | P: "Beat TV ... daily entertainment show with various celebrity guests"<br>H: "The hosts on Beat TV shared the screen time equally"<br>Gold: Neutral | X (Entailment) | $\checkmark$ (Neutral) |
+**Negation trap:**
+- Premise: "World Premiere ... released by Paramount Pictures"
+- Hypothesis: "World Premiere was not released by Universal Studios"
+- Gold label: Entailment
+- Control prediction: X (Contradiction)
+- Adversarial prediction: $\checkmark$ (Entailment)
+
+**World knowledge:**
+- Premise: "The Second Jungle Book ... not based on 'The Second Jungle Book'"
+- Hypothesis: "The first Jungle Book was written before 1997"
+- Gold label: Entailment
+- Control prediction: X (Contradiction)
+- Adversarial prediction: $\checkmark$ (Entailment)
+
+**Lexical overlap:**
+- Premise: "Beat TV ... daily entertainment show with various celebrity guests"
+- Hypothesis: "The hosts on Beat TV shared the screen time equally"
+- Gold label: Neutral
+- Control prediction: X (Entailment)
+- Adversarial prediction: $\checkmark$ (Neutral)
 
 The adversarially fine-tuned model shows improved handling of negation, better world knowledge integration, and reduced reliance on superficial lexical overlap.
 
