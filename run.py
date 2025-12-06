@@ -11,6 +11,7 @@ import numpy as np
 import random
 import torch
 from collections import Counter
+from datasets import concatenate_datasets, Features, Value
 
 NUM_PREPROCESSING_WORKERS = 2
 
@@ -88,6 +89,69 @@ def main():
         # so if we want to use a jsonl file for evaluation we need to get the "train" split
         # from the loaded dataset
         eval_split = 'train'
+    elif args.dataset == 'snli+anli':
+        # Combine SNLI and ANLI (all rounds) for joint training
+        dataset_id = ('snli+anli',)
+        print("Loading combined SNLI + ANLI dataset...")
+        snli_dataset = datasets.load_dataset('snli')
+        anli_dataset = datasets.load_dataset('anli')
+
+        # Filter out unlabeled SNLI examples
+        snli_train = snli_dataset['train'].filter(lambda ex: ex['label'] != -1)
+        snli_val = snli_dataset['validation'].filter(lambda ex: ex['label'] != -1)
+
+        # Collect ANLI rounds
+        anli_train_rounds = [anli_dataset[split] for split in ['train_r1', 'train_r2', 'train_r3'] if split in anli_dataset]
+        anli_dev_rounds = [anli_dataset[split] for split in ['dev_r1', 'dev_r2', 'dev_r3'] if split in anli_dataset]
+        if not anli_train_rounds or not anli_dev_rounds:
+            raise ValueError("ANLI dataset missing expected train/dev splits.")
+        anli_train = concatenate_datasets(anli_train_rounds)
+        anli_dev = concatenate_datasets(anli_dev_rounds)
+
+        # Ensure all splits share schema
+        common_features = Features({
+            'premise': Value('string'),
+            'hypothesis': Value('string'),
+            'label': Value('int64')
+        })
+        allowed_cols = set(common_features.keys())
+        def drop_extra_cols(ds):
+            extra = [c for c in ds.column_names if c not in allowed_cols]
+            return ds.remove_columns(extra) if extra else ds
+
+        snli_train = snli_train.cast(common_features)
+        snli_val = snli_val.cast(common_features)
+        anli_train = drop_extra_cols(anli_train).cast(common_features)
+        anli_dev = drop_extra_cols(anli_dev).cast(common_features)
+
+        dataset = {
+            'train': concatenate_datasets([snli_train, anli_train]),
+            'validation': concatenate_datasets([snli_val, anli_dev])
+        }
+        eval_split = 'validation'
+        print(f"Combined dataset: {len(snli_train)} SNLI train + {len(anli_train)} ANLI train = {len(dataset['train'])} examples")
+        print(f"Validation set: {len(snli_val)} SNLI dev + {len(anli_dev)} ANLI dev = {len(dataset['validation'])} examples")
+    elif args.dataset == 'anli':
+        # Special handling for ANLI dataset (three adversarial rounds)
+        dataset_id = ('anli',)
+        print("Loading ANLI dataset (train_r1+r2+r3; dev_r1+r2+r3 for eval)...")
+        raw_dataset = datasets.load_dataset('anli')
+
+        # Combine training rounds
+        train_rounds = [raw_dataset[split] for split in ['train_r1', 'train_r2', 'train_r3'] if split in raw_dataset]
+        if not train_rounds:
+            raise ValueError("ANLI dataset missing train splits (expected train_r1/train_r2/train_r3).")
+        train_set = concatenate_datasets(train_rounds)
+
+        # Combine dev rounds for validation
+        dev_rounds = [raw_dataset[split] for split in ['dev_r1', 'dev_r2', 'dev_r3'] if split in raw_dataset]
+        if not dev_rounds:
+            raise ValueError("ANLI dataset missing dev splits (expected dev_r1/dev_r2/dev_r3).")
+        dev_set = concatenate_datasets(dev_rounds)
+
+        dataset = {'train': train_set, 'validation': dev_set}
+        eval_split = 'validation'
+        print(f"ANLI dataset loaded: {len(train_set)} train examples, {len(dev_set)} validation examples")
     else:
         default_datasets = {'qa': ('squad',), 'nli': ('snli',)}
         dataset_id = tuple(args.dataset.split(':')) if args.dataset is not None else \
