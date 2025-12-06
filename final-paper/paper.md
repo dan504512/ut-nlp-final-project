@@ -184,13 +184,9 @@ On the challenging ANLI benchmark, contrastive learning shows small but consiste
 
 ### 5.2 Error Analysis by Category
 
-#### Primary Targets (Lexical Contrasts)
+#### Semantic Error Analysis
 
-![Primary lexical error analysis](figs/contrastive/primary_lexical_errors.png)
-
-#### Secondary Targets (Semantic Granularity)
-
-![Secondary semantic error analysis](figs/contrastive/secondary_semantic_errors.png)
+![Semantic error analysis](figs/contrastive/linguistic_errors.png)
 
 #### Contrastive Premise Groups
 
@@ -208,9 +204,9 @@ The most striking finding is the comprehensive improvement in calibration metric
 
 The confidence distribution analysis reveals the mechanism: the control model places 58.3\% of predictions at extreme confidence (>0.99), while the contrastive model reduces this to 32.5\%. This redistribution doesn't harm accuracy—in fact, accuracy improves in nearly every confidence bin. Most notably, among errors, extreme confidence (>0.99) drops from 14.5\% to just 4.7\%, indicating the model has learned to be appropriately uncertain when it is likely to be wrong.
 
-### 6.2 Mixed Results on Linguistic Phenomena
+### 6.2 Mixed Results on Semantic Categories
 
-Our error analysis shows mixed results on targeted linguistic categories. Surprisingly, error rates for categories we expected to improve (negation, quantifiers, antonyms) showed slight increases. This suggests that contrastive learning may induce complex redistributions of errors rather than straightforward improvements on specific phenomena. Several factors may explain this:
+Our semantic error analysis shows mixed results across different categories. This suggests that contrastive learning may induce complex redistributions of errors rather than straightforward improvements on specific phenomena. Several factors may explain this:
 
 1. **Insufficient Training**: One epoch may be too short to substantially reorganize learned representations
 2. **Bundle Composition**: Natural premise-hypothesis bundles may not consistently contain the contrasts needed to address specific phenomena  
