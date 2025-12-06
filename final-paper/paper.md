@@ -18,12 +18,12 @@ header-includes:
   - \usepackage{array}
   - \usepackage{float}
 abstract: |
-  Natural language inference (NLI) models based on pre-trained transformers can achieve high accuracy on benchmarks like SNLI, yet they often exhibit two intertwined failures: overconfident probabilities and brittle behavior on adversarial challenge sets. In this work we study two complementary fine-tuning strategies for ELECTRA-small: (1) a calibration-oriented contrastive learning objective that exploits naturally occurring premise-hypothesis bundles in SNLI, and (2) an adversarial robustness-oriented fine-tuning stage that mixes ANLI with SNLI. On SNLI, this contrastive fine-tuning leaves accuracy essentially unchanged (89.53\% → 89.58\%) but dramatically improves calibration: Expected Calibration Error drops by 45.7\% (0.066 → 0.036), Maximum Calibration Error by 41.6\%, Negative Log-Likelihood by 13.8\%, and the fraction of overconfident predictions (>0.99) from 58.3\% to 32.5\%, with extreme high-confidence errors reduced from 14.5\% to 4.7\% of all errors. On ANLI, it yields small but consistent accuracy gains on harder rounds (+0.7 on R2, +1.0 on R3). In a complementary setup, we perform a brief adversarial fine-tuning phase on concatenated SNLI+ANLI. Relative to a control model trained for an extra epoch on SNLI alone, this adversarial regime improves combined ANLI accuracy by +10.8 absolute points (~34\% relative) while maintaining SNLI accuracy (~89.4\%), demonstrating substantial robustness gains without sacrificing in-domain performance. Taken together, our results show that calibration-aware contrastive fine-tuning and ANLI-based adversarial fine-tuning address distinct but synergistic aspects of NLI reliability: the former reshapes confidence distributions with minimal cost, while the latter substantially improves performance on challenging out-of-distribution data.
+  Despite strong performance on standard benchmarks, transformer-based NLI systems suffer from systematic overconfidence and vulnerability to distribution shifts. We investigate two lightweight fine-tuning methods using ELECTRA-small: first, a contrastive approach leveraging naturally grouped premise-hypothesis pairs in SNLI with dynamic weighting based on lexical similarity; second, an adversarial strategy incorporating ANLI examples during training. Our contrastive method maintains accuracy (89.53\% → 89.58\%) while achieving substantial calibration improvements—ECE decreases 45.7\% (0.066 → 0.036), MCE drops 41.6\%, and predictions exceeding 99\% confidence fall from 58.3\% to 32.5\%. Critically, highly confident errors decrease from 14.5\% to 4.7\% of mistakes. The adversarial approach, training jointly on SNLI and ANLI for one epoch, increases combined ANLI performance by 10.8 points (34\% relative gain) without degrading SNLI accuracy. These complementary strategies target different failure modes: contrastive learning redistributes model confidence to better reflect uncertainty, while adversarial training directly addresses specific reasoning failures. Together, they offer computationally efficient paths toward more reliable NLI systems.
 ---
 
 ## 1. Introduction
 
-Natural language inference (NLI) is a core benchmark for evaluating language understanding, requiring models to predict whether a hypothesis is entailed by, contradicts, or is neutral with respect to a premise (Bowman et al., 2015). Transformer-based models fine-tuned on SNLI routinely achieve high accuracy, but a growing body of work shows that this success often relies on superficial cues and dataset artifacts rather than robust reasoning. Hypothesis-only baselines, lexical overlap heuristics, and simple negation cues can explain much of the performance (Poliak et al., 2018; McCoy et al., 2019; Gardner et al., 2020), raising concerns about how well these models generalize beyond benchmark test sets.
+Natural language inference (NLI) serves as a fundamental task for assessing machine language comprehension, where systems must determine the logical relationship—entailment, contradiction, or neutrality—between paired sentences (Bowman et al., 2015). While transformer architectures have pushed SNLI benchmark scores to impressive heights, mounting evidence reveals troubling dependencies on dataset-specific shortcuts. Studies have exposed how models can achieve strong performance using only partial information or simple pattern matching: training on hypotheses alone yields surprisingly high accuracy (Poliak et al., 2018), word overlap strongly predicts model decisions (McCoy et al., 2019), and minimal semantic-preserving edits cause dramatic failures (Gardner et al., 2020). These findings cast doubt on whether high benchmark scores reflect genuine understanding or merely sophisticated memorization of training artifacts.
 
 Two reliability issues are particularly problematic in deployment:
 
@@ -52,7 +52,7 @@ Our main contributions are:
 
 ### 2.1 Dataset Artifacts and Shortcut Learning in NLI
 
-A central critique of NLI benchmarks is that they contain annotation artifacts—systematic correlations between surface patterns and labels that models can exploit without genuine reasoning. Poliak et al. (2018) show that hypothesis-only models achieve surprisingly strong performance on multiple NLI datasets, indicating that premise information is often unnecessary. McCoy et al. (2019) identify syntactic heuristics (e.g., "high lexical overlap implies entailment") that models mistakenly internalize. Gardner et al. (2020) introduce contrast sets—minimally edited examples that flip the gold label—to demonstrate how brittle these shortcuts are under small perturbations.
+Research has revealed fundamental issues with how NLI models achieve their performance. When trained on standard benchmarks, models frequently learn spurious statistical patterns rather than developing genuine reasoning capabilities. Poliak et al. (2018) demonstrated this vulnerability by training models solely on hypothesis sentences—without any premise information—and achieving unexpectedly strong results. This finding suggests models exploit dataset-specific biases rather than performing true inference. McCoy et al. (2019) further identified specific syntactic patterns that models incorrectly treat as reliable signals, such as assuming high word overlap between premise and hypothesis indicates entailment. Gardner et al. (2020) exposed additional brittleness through minimal perturbations that maintain semantic meaning but cause models to fail, revealing their reliance on surface-level features.
 
 To mitigate artifacts, several lines of work modify training data or objectives:
 
@@ -64,7 +64,7 @@ Our work connects to this line by using premise-bundled contrastive pairs and ad
 
 ### 2.2 Calibration of Neural Classifiers
 
-A probabilistic classifier is well-calibrated when its confidence scores match empirical correctness frequencies (Guo et al., 2017). Modern deep networks tend to be overconfident, especially when trained with cross-entropy and aggressive regularization or data augmentation. Poor calibration is particularly problematic when outputs are consumed by downstream decision-making components, thresholding rules, or risk-sensitive systems.
+Calibration refers to the alignment between a model's predicted confidence and its actual accuracy—a well-calibrated model should be correct approximately 80% of the time when it predicts with 80% confidence (Guo et al., 2017). Contemporary neural networks, despite their strong performance, frequently suffer from systematic overconfidence. This miscalibration becomes especially pronounced with standard training practices involving cross-entropy optimization and various regularization techniques. Such confidence misalignment poses serious risks in practical applications where probability estimates guide critical decisions or determine system behavior thresholds.
 
 Standard post-hoc calibration methods (e.g., temperature scaling) adjust predicted logits without changing the model's decision boundaries. Training-time approaches instead modify objectives or architectures to encourage calibrated behavior, for example by adding regularizers that penalize miscalibrated confidence distributions. In NLI, however, most prior work has focused on accuracy and artifact mitigation rather than calibration metrics such as Expected Calibration Error (ECE), Maximum Calibration Error (MCE), Negative Log-Likelihood (NLL), or Brier score.
 
@@ -72,7 +72,7 @@ Our contrastive fine-tuning approach falls into this training-time calibration c
 
 ### 2.3 ELECTRA and Adversarial Challenge Sets
 
-ELECTRA (Clark et al., 2020) is a pre-trained transformer that replaces masked language modeling with a discriminative pre-training task: distinguishing real tokens from synthetic replacements. ELECTRA-small provides a strong, efficient encoder backbone for classification tasks like NLI; we use it as our shared base model in all experiments.
+The ELECTRA architecture (Clark et al., 2020) takes a different approach to pre-training than typical masked language models. Rather than predicting masked tokens, ELECTRA trains a discriminator to identify which tokens in a sentence have been artificially replaced by a generator network. This discriminative objective proves particularly effective for downstream classification tasks. The small variant of ELECTRA, with only 14M parameters, offers an attractive balance of computational efficiency and strong performance, making it our choice for these experiments.
 
 To assess genuine language understanding and robustness, several adversarial challenge datasets have been introduced. Among them, ANLI (Nie et al., 2020) is notable for its human-and-model-in-the-loop construction: annotators iteratively craft adversarial NLI examples that fool a current model. ANLI is released in three rounds (A1-A3) with different domains and increasing difficulty, including Wikipedia, news, fiction, spoken language, and instructional texts. Models trained only on SNLI often achieve near-random accuracy (~33\%) on ANLI, reflecting severe out-of-distribution (OOD) brittleness.
 
@@ -359,11 +359,11 @@ gains across all ANLI rounds. This shows that adversarial fine-tuning can
 substantially boost OOD robustness without sacrificing in-domain performance, 
 even with a short additional schedule.
 
-Taken together, our results highlight that calibration and robustness are 
-related but distinct objectives. Contrastive fine-tuning mainly reshapes the 
-model's confidence distribution, making its probabilities more trustworthy, 
-while adversarial fine-tuning mainly improves correctness on challenging 
-adversarial examples. While neither strategy alone solves all reliability 
+Our findings demonstrate that improving calibration and enhancing robustness 
+require different interventions. The contrastive approach primarily adjusts 
+how models express certainty without changing their decision boundaries, 
+whereas adversarial training teaches models to handle specific failure cases 
+they previously misclassified. While neither strategy alone solves all reliability 
 issues, they provide lightweight, complementary tools for making NLI models 
 more dependable in practice. The dramatic calibration gains achieved with 
 just one additional epoch of contrastive training suggest this approach 
