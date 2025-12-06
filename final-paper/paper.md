@@ -8,7 +8,7 @@ classoption:
 
 # Abstract
 
-Natural language inference (NLI) models based on pre-trained transformers can achieve high accuracy on benchmarks like SNLI, yet they often exhibit two intertwined failures: overconfident probabilities and brittle behavior on adversarial challenge sets. In this work we study two complementary fine-tuning strategies for ELECTRA-small: (1) a calibration-oriented contrastive learning objective that exploits naturally occurring premise-hypothesis bundles in SNLI, and (2) an adversarial robustness-oriented fine-tuning stage that mixes ANLI with SNLI. Our contrastive approach adds a margin ranking loss with lexical-overlap-based dynamic weighting on hypothesis pairs that share a premise but have different labels, encouraging the model to express uncertainty on fine-grained lexical and semantic distinctions. On SNLI, this contrastive fine-tuning leaves accuracy essentially unchanged (89.53\% $\rightarrow$ 89.58\%) but dramatically improves calibration: Expected Calibration Error drops by 45.7\% (0.066 $\rightarrow$ 0.036), Maximum Calibration Error by 41.6\%, Negative Log-Likelihood by 13.8\%, and the fraction of overconfident predictions (>0.99) from 58.3\% to 32.5\%, with extreme high-confidence errors reduced from 14.5\% to 4.7\% of all errors. On ANLI, it yields small but consistent accuracy gains on harder rounds (+0.7 on R2, +1.0 on R3). In a complementary setup, we perform a brief adversarial fine-tuning phase on concatenated SNLI+ANLI. Relative to a control model trained for an extra epoch on SNLI alone, this adversarial regime improves combined ANLI accuracy by +10.8 absolute points (~34\% relative) while maintaining SNLI accuracy (~89.4\%), demonstrating substantial robustness gains without sacrificing in-domain performance. Taken together, our results show that calibration-aware contrastive fine-tuning and ANLI-based adversarial fine-tuning address distinct but synergistic aspects of NLI reliability: the former reshapes confidence distributions with minimal cost, while the latter substantially improves performance on challenging out-of-distribution data.
+Natural language inference (NLI) models based on pre-trained transformers can achieve high accuracy on benchmarks like SNLI, yet they often exhibit two intertwined failures: overconfident probabilities and brittle behavior on adversarial challenge sets. In this work we study two complementary fine-tuning strategies for ELECTRA-small: (1) a calibration-oriented contrastive learning objective that exploits naturally occurring premise-hypothesis bundles in SNLI, and (2) an adversarial robustness-oriented fine-tuning stage that mixes ANLI with SNLI. On SNLI, this contrastive fine-tuning leaves accuracy essentially unchanged (89.53\% $\rightarrow$ 89.58\%) but dramatically improves calibration: Expected Calibration Error drops by 45.7\% (0.066 $\rightarrow$ 0.036), Maximum Calibration Error by 41.6\%, Negative Log-Likelihood by 13.8\%, and the fraction of overconfident predictions (>0.99) from 58.3\% to 32.5\%, with extreme high-confidence errors reduced from 14.5\% to 4.7\% of all errors. On ANLI, it yields small but consistent accuracy gains on harder rounds (+0.7 on R2, +1.0 on R3). In a complementary setup, we perform a brief adversarial fine-tuning phase on concatenated SNLI+ANLI. Relative to a control model trained for an extra epoch on SNLI alone, this adversarial regime improves combined ANLI accuracy by +10.8 absolute points (~34\% relative) while maintaining SNLI accuracy (~89.4\%), demonstrating substantial robustness gains without sacrificing in-domain performance. Taken together, our results show that calibration-aware contrastive fine-tuning and ANLI-based adversarial fine-tuning address distinct but synergistic aspects of NLI reliability: the former reshapes confidence distributions with minimal cost, while the latter substantially improves performance on challenging out-of-distribution data.
 
 ---
 
@@ -329,53 +329,66 @@ The qualitative analysis reveals that adversarial fine-tuning helps the model ov
 
 ## 11. Conclusion
 
-We studied two complementary fine-tuning strategies for improving the reliability of an ELECTRA-small NLI model trained on SNLI: premise-bundled contrastive fine-tuning for calibration and adversarial fine-tuning with ANLI for robustness.
+We studied two complementary fine-tuning strategies for improving the 
+reliability of an ELECTRA-small NLI model trained on SNLI: premise-bundled 
+contrastive fine-tuning for calibration and adversarial fine-tuning with 
+ANLI for robustness.
 
-On the calibration side, we introduced a contrastive objective that operates over SNLI premise-hypothesis bundles, adding a margin ranking loss between hypotheses with different labels and weighting these pairs by lexical overlap. A single epoch of contrastive fine-tuning left SNLI accuracy essentially unchanged (89.53\% $\rightarrow$ 89.58\%) but dramatically improved calibration: ECE and MCE dropped by 45.7\% and 41.6\% respectively, NLL and Brier scores improved, and the fraction of extremely confident predictions (>0.99) fell from 58.3\% to 32.5\%. Crucially, the proportion of errors made with extreme confidence decreased from 14.5\% to 4.7\%, indicating that the model learned to express appropriate uncertainty when it was likely to be wrong. These gains came at negligible computational cost.
+On the calibration side, we introduced a contrastive objective that operates 
+over SNLI premise-hypothesis bundles, adding a margin ranking loss between 
+hypotheses with different labels and weighting these pairs by lexical 
+overlap. A single epoch of contrastive fine-tuning left SNLI accuracy 
+essentially unchanged (89.53\% $\rightarrow$ 89.58\%) but dramatically 
+improved calibration: ECE and MCE dropped by 45.7\% and 41.6\% respectively, 
+NLL and Brier scores improved, and the fraction of extremely confident 
+predictions (>0.99) fell from 58.3\% to 32.5\%. Crucially, the proportion 
+of errors made with extreme confidence decreased from 14.5\% to 4.7\%, 
+indicating that the model learned to express appropriate uncertainty when it 
+was likely to be wrong. These gains came at negligible computational cost.
 
-On the robustness side, we established a strong SNLI baseline and compared two continuation regimes: an additional epoch on SNLI alone (control) and an adversarial regime training on concatenated SNLI+ANLI. While all models maintained similar SNLI performance (~89.3-89.5\%), the adversarial run improved ANLI performance dramatically: combined ANLI accuracy increased by +10.8 absolute points (~34\% relative) over the control model, with large gains across all ANLI rounds. This shows that adversarial fine-tuning can substantially boost OOD robustness without sacrificing in-domain performance, even with a short additional schedule.
+On the robustness side, we established a strong SNLI baseline and compared 
+two continuation regimes: an additional epoch on SNLI alone (control) and an 
+adversarial regime training on concatenated SNLI+ANLI. While all models 
+maintained similar SNLI performance (~89.3-89.5\%), the adversarial run 
+improved ANLI performance dramatically: combined ANLI accuracy increased by 
++10.8 absolute points (~34\% relative) over the control model, with large 
+gains across all ANLI rounds. This shows that adversarial fine-tuning can 
+substantially boost OOD robustness without sacrificing in-domain performance, 
+even with a short additional schedule.
 
-Taken together, our results highlight that calibration and robustness are related but distinct objectives. Contrastive fine-tuning mainly reshapes the model's confidence distribution, making its probabilities more trustworthy, while adversarial fine-tuning mainly improves correctness on challenging adversarial examples. While neither strategy alone solves all reliability issues, they provide lightweight, complementary tools for making NLI models more dependable in practice. The dramatic calibration gains achieved with just one additional epoch of contrastive training suggest this approach could be valuable as a lightweight calibration-aware fine-tuning step after standard training.
+Taken together, our results highlight that calibration and robustness are 
+related but distinct objectives. Contrastive fine-tuning mainly reshapes the 
+model's confidence distribution, making its probabilities more trustworthy, 
+while adversarial fine-tuning mainly improves correctness on challenging 
+adversarial examples. While neither strategy alone solves all reliability 
+issues, they provide lightweight, complementary tools for making NLI models 
+more dependable in practice. The dramatic calibration gains achieved with 
+just one additional epoch of contrastive training suggest this approach 
+could be valuable as a lightweight calibration-aware fine-tuning step after 
+standard training.
 
 ---
 
-## 12. Limitations
+## 12. Limitations and Future Work
 
-Our work has several limitations that should be addressed in future research:
-
-1. **Limited training duration**: Both contrastive and adversarial fine-tuning use only one additional epoch, which may be insufficient for optimal performance.
-
-2. **Single seed experiments**: All results are from single runs without variance estimates across random seeds.
-
-3. **Model size constraints**: We use ELECTRA-small (14M parameters) for efficiency, but larger models might show different patterns.
-
-4. **Limited adversarial evaluation**: While we evaluate on ANLI, more comprehensive testing on HANS, contrast sets, and hypothesis-only baselines would strengthen claims about artifact mitigation.
-
-5. **Static hyperparameters**: We use fixed margins and weighting schemes without extensive tuning.
-
-6. **Bundle quality**: Natural premise-hypothesis bundles in SNLI may not consistently contain the contrasts needed for specific phenomena.
-
----
-
-## 13. Future Work
-
-Our findings suggest several directions for extending and combining calibration- and robustness-oriented fine-tuning:
-
-1. **Direct artifact and challenge-set testing.** Evaluate both contrastive and adversarially fine-tuned models on targeted artifact benchmarks such as HANS and contrast sets, as well as hypothesis-only tests, to more directly quantify reductions in shortcut reliance.
-
-2. **Multiple seeds and hyperparameter sweeps.** Explore variance across random seeds and investigate the sensitivity of both methods to the contrastive margin, overlap weighting function, mixing ratio of SNLI/ANLI, and number of fine-tuning epochs.
-
-3. **Extended and interleaved training schedules.** Study longer schedules, interleaving or alternating contrastive and adversarial batches, and curriculum strategies that gradually increase difficulty.
-
-4. **Synthetic and structured contrast generation.** Generate additional synthetic contrast pairs targeting specific linguistic phenomena such as negation, quantifiers, and world knowledge, then integrate them into the contrastive objective.
-
-5. **Fine-grained calibration analysis.** Stratify calibration by overlap level, label type, and linguistic category, investigating whether high-overlap entailment decisions become better calibrated than low-overlap contradictions.
-
-6. **Combining calibration and robustness objectives.** Jointly optimize for calibration and robustness by applying overlap-weighted contrastive losses on both SNLI and ANLI examples or adding calibration-aware regularizers during adversarial fine-tuning.
-
-7. **Scaling to larger models and other datasets.** Test whether our findings hold for larger ELECTRA variants or other architectures, and whether similar benefits arise on multi-genre NLI datasets such as MultiNLI.
-
-8. **Curriculum learning strategies.** Explore gradual mixing of SNLI and ANLI data, starting with easier adversarial examples and progressively increasing difficulty.
+While our fine-tuning strategies deliver strong improvements in calibration 
+and adversarial robustness, there are several opportunities for refinement. 
+First, both contrastive and ANLI-based stages rely on only one additional 
+epoch and a single experimental seed, leaving open questions about stability 
+and optimal training duration. We also restrict our study to the 
+14M-parameter ELECTRA-small model; larger architectures may behave 
+differently. Moreover, we primarily evaluate on SNLI and ANLI, so 
+improvements on broader artifact-focused benchmarks (e.g., HANS, contrast 
+sets, hypothesis-only tests) remain to be demonstrated.
+Future work should therefore examine multi-seed variance, conduct 
+hyperparameter sweeps over contrastive margins and dataset mixing ratios, 
+and explore extended or interleaved training schedules. Enhancing the quality 
+and diversity of contrastive examples—through structured or synthetic 
+generation targeting specific linguistic phenomena—may further improve 
+calibration. Finally, joint optimization of calibration and robustness 
+objectives, along with scaling to larger models and multi-genre NLI 
+datasets, could validate the generality of these approaches and strengthen 
+claims of reduced shortcut reliance.
 
 ---
 
