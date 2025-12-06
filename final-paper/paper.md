@@ -1,15 +1,24 @@
 ---
-geometry: top=1in, bottom=1in, left=1in, right=1in
+title: "Improving NLI Reliability through Contrastive Calibration and Adversarial Fine-tuning"
+author: 
+  - Subbu Kumarappan
+  - Dan Robert
+date: "December 2025"
+geometry: margin=1in
 fontsize: 10pt
 documentclass: article
-classoption: 
-  - notitlepage
----
-
-# Abstract
-
-Natural language inference (NLI) models based on pre-trained transformers can achieve high accuracy on benchmarks like SNLI, yet they often exhibit two intertwined failures: overconfident probabilities and brittle behavior on adversarial challenge sets. In this work we study two complementary fine-tuning strategies for ELECTRA-small: (1) a calibration-oriented contrastive learning objective that exploits naturally occurring premise-hypothesis bundles in SNLI, and (2) an adversarial robustness-oriented fine-tuning stage that mixes ANLI with SNLI. On SNLI, this contrastive fine-tuning leaves accuracy essentially unchanged (89.53\% $\rightarrow$ 89.58\%) but dramatically improves calibration: Expected Calibration Error drops by 45.7\% (0.066 $\rightarrow$ 0.036), Maximum Calibration Error by 41.6\%, Negative Log-Likelihood by 13.8\%, and the fraction of overconfident predictions (>0.99) from 58.3\% to 32.5\%, with extreme high-confidence errors reduced from 14.5\% to 4.7\% of all errors. On ANLI, it yields small but consistent accuracy gains on harder rounds (+0.7 on R2, +1.0 on R3). In a complementary setup, we perform a brief adversarial fine-tuning phase on concatenated SNLI+ANLI. Relative to a control model trained for an extra epoch on SNLI alone, this adversarial regime improves combined ANLI accuracy by +10.8 absolute points (~34\% relative) while maintaining SNLI accuracy (~89.4\%), demonstrating substantial robustness gains without sacrificing in-domain performance. Taken together, our results show that calibration-aware contrastive fine-tuning and ANLI-based adversarial fine-tuning address distinct but synergistic aspects of NLI reliability: the former reshapes confidence distributions with minimal cost, while the latter substantially improves performance on challenging out-of-distribution data.
-
+# classoption: 
+#   - twocolumn
+header-includes:
+  - \usepackage{authblk}
+  - \renewcommand{\Authfont}{\normalsize}
+  - \renewcommand{\Affilfont}{\small\itshape}
+  - \setlength{\columnsep}{0.25in}
+  - \usepackage{booktabs}
+  - \usepackage{array}
+  - \usepackage{float}
+abstract: |
+  Natural language inference (NLI) models based on pre-trained transformers can achieve high accuracy on benchmarks like SNLI, yet they often exhibit two intertwined failures: overconfident probabilities and brittle behavior on adversarial challenge sets. In this work we study two complementary fine-tuning strategies for ELECTRA-small: (1) a calibration-oriented contrastive learning objective that exploits naturally occurring premise-hypothesis bundles in SNLI, and (2) an adversarial robustness-oriented fine-tuning stage that mixes ANLI with SNLI. On SNLI, this contrastive fine-tuning leaves accuracy essentially unchanged (89.53\% → 89.58\%) but dramatically improves calibration: Expected Calibration Error drops by 45.7\% (0.066 → 0.036), Maximum Calibration Error by 41.6\%, Negative Log-Likelihood by 13.8\%, and the fraction of overconfident predictions (>0.99) from 58.3\% to 32.5\%, with extreme high-confidence errors reduced from 14.5\% to 4.7\% of all errors. On ANLI, it yields small but consistent accuracy gains on harder rounds (+0.7 on R2, +1.0 on R3). In a complementary setup, we perform a brief adversarial fine-tuning phase on concatenated SNLI+ANLI. Relative to a control model trained for an extra epoch on SNLI alone, this adversarial regime improves combined ANLI accuracy by +10.8 absolute points (~34\% relative) while maintaining SNLI accuracy (~89.4\%), demonstrating substantial robustness gains without sacrificing in-domain performance. Taken together, our results show that calibration-aware contrastive fine-tuning and ANLI-based adversarial fine-tuning address distinct but synergistic aspects of NLI reliability: the former reshapes confidence distributions with minimal cost, while the latter substantially improves performance on challenging out-of-distribution data.
 ---
 
 ## 1. Introduction
