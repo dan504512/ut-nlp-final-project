@@ -151,6 +151,7 @@ For the experimental condition, we set $\alpha = 0.5$ and margin $m = 0.5$. The 
 ### 4.4 Evaluation Metrics
 
 We evaluate on:
+
 - Overall accuracy on SNLI and ANLI
 - Confidence calibration metrics (ECE, MCE, NLL, Brier score)
 - Fine-grained error categorization based on linguistic phenomena
@@ -288,6 +289,7 @@ The baseline model collapses on ANLI (~30.6\%, essentially random for 3-way clas
 Adversarial fine-tuning fixes several error types that persist in the control model:
 
 **Negation trap:**
+
 - Premise: "World Premiere ... released by Paramount Pictures"
 - Hypothesis: "World Premiere was not released by Universal Studios"
 - Gold label: Entailment
@@ -295,6 +297,7 @@ Adversarial fine-tuning fixes several error types that persist in the control mo
 - Adversarial prediction: $\checkmark$ (Entailment)
 
 **World knowledge:**
+
 - Premise: "The Second Jungle Book ... not based on 'The Second Jungle Book'"
 - Hypothesis: "The first Jungle Book was written before 1997"
 - Gold label: Entailment
@@ -302,6 +305,7 @@ Adversarial fine-tuning fixes several error types that persist in the control mo
 - Adversarial prediction: $\checkmark$ (Entailment)
 
 **Lexical overlap:**
+
 - Premise: "Beat TV ... daily entertainment show with various celebrity guests"
 - Hypothesis: "The hosts on Beat TV shared the screen time equally"
 - Gold label: Neutral
@@ -319,6 +323,7 @@ The most notable finding is that adversarial fine-tuning substantially improves 
 ### 10.2 Differential Improvements Across Rounds
 
 The gains are largest on A1 (+16 points) compared to A2 and A3 (+7.9 and +8.4 points respectively). This may reflect:
+
 - A1's simpler domain (Wikipedia only) being more learnable in a single epoch
 - Diminishing returns as rounds become progressively harder
 - Limited model capacity (ELECTRA-small) struggling with the diverse domains in A3
@@ -326,6 +331,7 @@ The gains are largest on A1 (+16 points) compared to A2 and A3 (+7.9 and +8.4 po
 ### 10.3 Addressing Specific Failure Modes
 
 The qualitative analysis reveals that adversarial fine-tuning helps the model overcome specific shortcuts:
+
 - **Negation handling**: Learning that "not X" doesn't automatically imply contradiction
 - **World knowledge**: Better integration of factual information
 - **Lexical overlap**: Reduced reliance on surface similarity as a signal for entailment
