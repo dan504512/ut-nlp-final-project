@@ -178,19 +178,11 @@ The calibration metrics reveal substantial improvements despite minimal accuracy
 
 The contrastive model shows a dramatic shift away from extreme confidence (>0.99), with predictions more evenly distributed across confidence ranges. The proportion of predictions with confidence >0.99 drops from 58.3\% to 32.5\%, while maintaining or improving accuracy in each confidence bin. Among errors, extreme confidence (>0.99) drops from 14.5\% to 4.7\% of all errors.
 
-#### Adversarial NLI (Out-of-Distribution)
-
-![Error Analysis](figs/contrastive/combined_analysis.png)
+### 5.2 Error Analysis
 
 On the challenging ANLI benchmark, contrastive learning shows small but consistent improvements on rounds R2 (+0.7\%) and R3 (+1.0\%), with no change on R1.
 
-### 5.2 Error Analysis by Category
-
-#### Semantic Error Analysis
-
-#### Contrastive Premise Groups
-
-### 5.3 Overlap-Based Analysis
+![Error Analysis](figs/contrastive/combined_analysis.png)
 
 ![Overlap-based error analysis](figs/contrastive/overlap_analysis.png)
 
