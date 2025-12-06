@@ -170,7 +170,7 @@ The contrastive model shows a dramatic shift away from extreme confidence (>0.99
 
 #### Adversarial NLI (Out-of-Distribution)
 
-![ANLI results for contrastive models](figs/contrastive/anli_results.png)
+![Error Analysis](figs/contrastive/combined_analysis.png)
 
 On the challenging ANLI benchmark, contrastive learning shows small but consistent improvements on rounds R2 (+0.7\%) and R3 (+1.0\%), with no change on R1.
 
@@ -178,11 +178,7 @@ On the challenging ANLI benchmark, contrastive learning shows small but consiste
 
 #### Semantic Error Analysis
 
-![Semantic error analysis](figs/contrastive/linguistic_errors.png)
-
 #### Contrastive Premise Groups
-
-![Premise group error analysis](figs/contrastive/premise_group_errors.png)
 
 ### 5.3 Overlap-Based Analysis
 
