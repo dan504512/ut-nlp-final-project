@@ -69,6 +69,8 @@ Our contrastive NLI approach follows a similar bundle-based philosophy: we treat
 
 ---
 
+![Training flowchart for both contrastive and adversarial fine-tuning approaches](figs/training-flowchart.png)
+
 ## Part I: Contrastive Learning for Calibration
 
 ## 3. Contrastive Methodology
@@ -143,10 +145,7 @@ We evaluate on:
 
 #### SNLI Validation Set
 
-| Model | Accuracy | ECE | MCE | NLL | Brier |
-|-------|----------|-----|-----|-----|-------|
-| Control (+1 epoch, $\alpha$=0) | 89.53\% | 0.066 | 0.214 | 0.370 | 0.176 |
-| Contrastive (+1 epoch, $\alpha$=0.5) | 89.58\% | 0.036 | 0.125 | 0.319 | 0.167 |
+![Calibration metrics comparison between control and contrastive models](figs/contrastive/snli_calibration_metrics.png)
 
 The calibration metrics reveal substantial improvements despite minimal accuracy gains (+0.05\%):
 
@@ -157,23 +156,13 @@ The calibration metrics reveal substantial improvements despite minimal accuracy
 
 #### Confidence Distribution
 
-| Confidence Range | Control | | Contrastive | |
-|-----------------|---------|----------|------------|----------|
-| | Count (\%) | Accuracy | Count (\%) | Accuracy |
-| (0.99, 1.00] | 58.3\% | 0.974 | 32.5\% | 0.985 |
-| (0.95, 0.99] | 26.1\% | 0.869 | 37.0\% | 0.953 |
-| (0.90, 0.95] | 6.1\% | 0.767 | 10.1\% | 0.847 |
-| (0.80, 0.90] | 3.8\% | 0.645 | 8.8\% | 0.733 |
-| $\leq$ 0.80 | 5.8\% | 0.507 | 11.6\% | 0.641 |
+![Confidence distribution comparison between control and contrastive models](figs/contrastive/confidence_distribution.png)
 
 The contrastive model shows a dramatic shift away from extreme confidence (>0.99), with predictions more evenly distributed across confidence ranges. The proportion of predictions with confidence >0.99 drops from 58.3\% to 32.5\%, while maintaining or improving accuracy in each confidence bin. Among errors, extreme confidence (>0.99) drops from 14.5\% to 4.7\% of all errors.
 
 #### Adversarial NLI (Out-of-Distribution)
 
-| Model | ANLI-R1 | ANLI-R2 | ANLI-R3 |
-|-------|---------|---------|---------|
-| Control | 32.4\% | 32.0\% | 32.0\% |
-| Contrastive | 32.4\% | 32.7\% | 33.0\% |
+![ANLI results for contrastive models](figs/contrastive/anli_results.png)
 
 On the challenging ANLI benchmark, contrastive learning shows small but consistent improvements on rounds R2 (+0.7\%) and R3 (+1.0\%), with no change on R1.
 
@@ -181,34 +170,19 @@ On the challenging ANLI benchmark, contrastive learning shows small but consiste
 
 #### Primary Targets (Lexical Contrasts)
 
-| Category | Control Errors | Contrastive Errors | Change |
-|----------|----------------|-------------------|---------|
-| Negation flips | 18 (1.7\%) | 19 (1.9\%) | +5.6\% |
-| Quantifier changes | 164 (15.9\%) | 174 (17.0\%) | +6.1\% |
-| Antonym substitutions | 57 (5.5\%) | 59 (5.8\%) | +3.5\% |
+![Primary lexical error analysis](figs/contrastive/primary_lexical_errors.png)
 
 #### Secondary Targets (Semantic Granularity)
 
-| Category | Control Errors | Contrastive Errors | Change |
-|----------|----------------|-------------------|---------|
-| Hypernym/hyponym | 428 (41.6\%) | 423 (41.2\%) | -1.2\% |
-| Modifier additions | 341 (33.1\%) | 339 (33.0\%) | -0.6\% |
+![Secondary semantic error analysis](figs/contrastive/secondary_semantic_errors.png)
 
 #### Contrastive Premise Groups
 
-| Category | Control Errors | Contrastive Errors | Change |
-|----------|----------------|-------------------|---------|
-| High-contrast premises | 141 (13.7\%) | 145 (14.1\%) | +2.8\% |
-| Low-contrast premises | 233 (22.6\%) | 230 (22.4\%) | -1.3\% |
+![Premise group error analysis](figs/contrastive/premise_group_errors.png)
 
 ### 5.3 Overlap-Based Analysis
 
-| Overlap Level | Control Errors | Contrastive Errors | Change |
-|---------------|----------------|-------------------|---------|
-| Very high (>60\%) | 35 (3.4\%) | 32 (3.1\%) | -8.6\% |
-| Very low (<20\%) | 547 (53.1\%) | 554 (54.0\%) | +1.3\% |
-| False entailment (high overlap) | 14 (1.4\%) | 13 (1.3\%) | -7.1\% |
-| False contradiction (low overlap) | 153 (14.9\%) | 164 (16.0\%) | +7.2\% |
+![Overlap-based error analysis](figs/contrastive/overlap_analysis.png)
 
 ## 6. Contrastive Discussion
 
@@ -295,6 +269,10 @@ The baseline model collapses on ANLI (~30.6\%, essentially random for 3-way clas
 - A2: +7.9 points (25.0\% relative improvement)
 - A3: +8.4 points (26.4\% relative improvement)
 - Combined: +10.8 points (34.2\% relative improvement)
+
+![Figure 1: SNLI vs ANLI accuracy across models](figs/adversarial/adversarial-results.png)
+
+![Figure 2: ANLI round-level improvements](figs/adversarial/adversarial-improvements.png)
 
 ### 9.4 Qualitative Error Analysis
 
