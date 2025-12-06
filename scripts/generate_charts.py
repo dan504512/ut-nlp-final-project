@@ -218,15 +218,15 @@ def create_anli_results():
 
 def create_error_analysis_charts():
     """Create error analysis charts."""
-    # Primary Lexical Errors
+    # Linguistic Error Analysis
     fig, ax = plt.subplots(figsize=(10, 6))
     
-    # From the paper's error analysis tables
-    error_types = ['Negation\nFlips', 'Quantifier\nChanges', 'Antonym\nSubstitutions']
-    control_errors = [18, 164, 57]  # Actual values from paper
-    contrastive_errors = [19, 174, 59]  # Actual values from paper
-    control_pcts = [1.7, 15.9, 5.5]  # Percentages from paper
-    contrastive_pcts = [1.9, 17.0, 5.8]
+    # From the paper's secondary targets table
+    error_types = ['Hypernym/\nHyponym', 'Modifier\nAdditions']
+    control_errors = [428, 341]  # From paper
+    contrastive_errors = [423, 339]  # From paper
+    control_pcts = [41.6, 33.1]  # Percentages
+    contrastive_pcts = [41.2, 33.0]
     
     x = np.arange(len(error_types))
     width = 0.35
@@ -243,51 +243,16 @@ def create_error_analysis_charts():
     
     ax.set_xlabel('Error Type')
     ax.set_ylabel('Number of Errors')
-    ax.set_title('Primary Targets (Lexical Contrasts) - Error Analysis')
+    ax.set_title('Linguistic Error Analysis: Semantic Granularity')
     ax.set_xticks(x)
     ax.set_xticklabels(error_types)
     ax.legend()
     ax.grid(True, alpha=0.3, axis='y')
     
     plt.tight_layout()
-    plt.savefig('primary_lexical_errors.pdf', bbox_inches='tight')
-    plt.savefig('primary_lexical_errors.png', bbox_inches='tight')
-    print("Generated: primary_lexical_errors.pdf/png")
-    
-    # Secondary Semantic Errors
-    fig, ax = plt.subplots(figsize=(10, 6))
-    
-    # From the paper's secondary targets table
-    error_types = ['Hypernym/\nHyponym', 'Modifier\nAdditions']
-    control_errors = [428, 341]  # From paper
-    contrastive_errors = [423, 339]  # From paper
-    control_pcts = [41.6, 33.1]  # Percentages
-    contrastive_pcts = [41.2, 33.0]
-    
-    x = np.arange(len(error_types))
-    
-    bars1 = ax.bar(x - width/2, control_errors, width, label='Control', color='coral', alpha=0.8)
-    bars2 = ax.bar(x + width/2, contrastive_errors, width, label='Contrastive', color='skyblue', alpha=0.8)
-    
-    # Add percentage labels
-    for i, (bars, pcts) in enumerate([(bars1, control_pcts), (bars2, contrastive_pcts)]):
-        for bar, pct in zip(bars, pcts):
-            height = bar.get_height()
-            ax.text(bar.get_x() + bar.get_width()/2., height,
-                   f'{pct:.1f}%', ha='center', va='bottom', fontsize=8)
-    
-    ax.set_xlabel('Error Type')
-    ax.set_ylabel('Number of Errors')
-    ax.set_title('Secondary Targets (Semantic Granularity) - Error Analysis')
-    ax.set_xticks(x)
-    ax.set_xticklabels(error_types)
-    ax.legend()
-    ax.grid(True, alpha=0.3, axis='y')
-    
-    plt.tight_layout()
-    plt.savefig('secondary_semantic_errors.pdf', bbox_inches='tight')
-    plt.savefig('secondary_semantic_errors.png', bbox_inches='tight')
-    print("Generated: secondary_semantic_errors.pdf/png")
+    plt.savefig('linguistic_errors.pdf', bbox_inches='tight')
+    plt.savefig('linguistic_errors.png', bbox_inches='tight')
+    print("Generated: linguistic_errors.pdf/png")
 
 def create_premise_group_errors():
     """Create premise grouping error analysis chart."""
@@ -431,8 +396,7 @@ def main():
     print("  - snli_calibration_metrics.pdf/png")
     print("  - confidence_distribution.pdf/png")
     print("  - anli_results.pdf/png")
-    print("  - primary_lexical_errors.pdf/png")
-    print("  - secondary_semantic_errors.pdf/png")
+    print("  - linguistic_errors.pdf/png")
     print("  - premise_group_errors.pdf/png")
     print("  - overlap_analysis.pdf/png")
 
